@@ -1,0 +1,158 @@
+openapi: 3.1.0
+info:
+  title: SecLab Agent API
+  version: 0.1.0-alpha.1
+  description: 通过 Master `/api/v1/agent/**` 代理访问的 Agent 接口。
+servers:
+  - url: /api/v1/agent
+tags:
+  - name: Docker 查询
+  - name: Docker 操作
+  - name: Docker 日志
+  - name: WebSocket
+paths:
+  /docker/info:
+    get:
+      operationId: seclabAgentDockerInfo
+      tags: [Docker 查询]
+      summary: 获取 Docker 系统信息
+      responses:
+        '200': { description: 返回 Docker 系统信息, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/mod.rs }, designDocs: [], reviewedAt: null, notes: '' }
+  /docker/overview/realtime:
+    post:
+      operationId: seclabAgentDockerOverviewRealtime
+      tags: [Docker 查询]
+      summary: 获取 Docker 实时概览
+      responses:
+        '200': { description: 返回容器、镜像和项目概览, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/mod.rs }, designDocs: [], reviewedAt: null, notes: 需要核对复杂查询是否仍应使用 POST。 }
+  /docker/containers:
+    get:
+      operationId: seclabAgentDockerContainersList
+      tags: [Docker 查询]
+      summary: 查询全部容器
+      responses:
+        '200': { description: 返回容器列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/containers.rs }, designDocs: [], reviewedAt: null, notes: '' }
+  /docker/compose/containers:
+    get:
+      operationId: seclabAgentDockerComposeContainersList
+      tags: [Docker 查询]
+      summary: 查询 Compose 容器
+      responses:
+        '200': { description: 返回 Compose 管理的容器列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/containers.rs }, designDocs: [], reviewedAt: null, notes: '' }
+  /docker/images:
+    get:
+      operationId: seclabAgentDockerImagesList
+      tags: [Docker 查询]
+      summary: 查询镜像
+      responses:
+        '200': { description: 返回镜像列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/images.rs }, designDocs: [], reviewedAt: null, notes: '' }
+  /docker/networks:
+    get:
+      operationId: seclabAgentDockerNetworksList
+      tags: [Docker 查询]
+      summary: 查询 Docker 网络
+      responses:
+        '200': { description: 返回网络列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/networks.rs }, designDocs: [], reviewedAt: null, notes: '' }
+  /docker/volumes:
+    get:
+      operationId: seclabAgentDockerVolumesList
+      tags: [Docker 查询]
+      summary: 查询 Docker 卷
+      responses:
+        '200': { description: 返回卷列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/volumes.rs }, designDocs: [], reviewedAt: null, notes: '' }
+  /docker/sdu:
+    get:
+      operationId: seclabAgentDockerDiskUsage
+      tags: [Docker 查询]
+      summary: 获取 Docker 逻辑磁盘占用
+      responses:
+        '200': { description: 返回 Docker 逻辑磁盘总占用量, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/system.rs }, designDocs: [], reviewedAt: null, notes: '' }
+  /docker/action:
+    post:
+      operationId: seclabAgentDockerAction
+      tags: [Docker 操作]
+      summary: 执行 Docker 对象操作
+      description: 当前文档记录可执行 start、stop、restart 和 remove。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DockerActionRequest' }
+      responses:
+        '200': { description: 操作已执行, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '400': { description: 操作或目标不合法, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: agent
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab-agent/src/api/docker/containers.rs }
+        designDocs: []
+        reviewedAt: null
+        notes: 当前实现主要依赖 name 字段，需要治理对象类型和动作语义。
+  /docker/logs:
+    post:
+      operationId: seclabAgentDockerLogsQuery
+      tags: [Docker 日志]
+      summary: 查询 Agent Docker 操作日志
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogQuery' }
+      responses:
+        '200': { description: 返回 Docker 模块日志分页数据, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/mod.rs }, designDocs: [standards/SecLab平台日志设计规范.md], reviewedAt: null, notes: '' }
+  /websocket/events/ws:
+    get:
+      operationId: seclabAgentWebsocketEvents
+      tags: [WebSocket]
+      summary: 建立 Agent 通用事件流
+      description: WebSocket 入口，客户端通过消息订阅或取消订阅容器日志等实时事件。
+      responses:
+        '101': { description: WebSocket 协议升级成功 }
+        '400': { description: WebSocket 升级请求无效 }
+      x-seclab:
+        owner: seclab
+        layer: agent
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab-agent/src/api/websocket.rs }
+        designDocs: [standards/SecLabWebSocket基础设施设计规范.md]
+        reviewedAt: null
+        notes: OpenAPI 只登记握手入口，消息协议仍需后续独立治理。
+components:
+  schemas:
+    ApiResponse:
+      type: object
+      required: [success, code, message]
+      properties:
+        success: { type: boolean }
+        code: { type: integer }
+        message: { type: string }
+        messageKey: { type: [string, 'null'] }
+        errorCode: { type: [string, 'null'] }
+        data: {}
+    DockerActionRequest:
+      type: object
+      required: [id, name, action]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        action: { type: string, enum: [start, stop, restart, remove] }
+    LogQuery:
+      type: object
+      additionalProperties: true
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        modules: { type: array, items: { type: string } }
+        statuses: { type: array, items: { type: string } }

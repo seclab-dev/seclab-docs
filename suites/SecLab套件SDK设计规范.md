@@ -1,0 +1,476 @@
+# SecLab 套件 SDK 设计规范
+
+## 定位
+
+`@seclab-dev/suite-sdk` 是 SecLab 主控与套件 Web 前端之间的标准通信层。
+
+SDK 不绑定 Vue 或 React，不负责业务 API、容器生命周期、权限决策和主控路由生成。
+
+## 分层
+
+### Transport
+
+负责 `postMessage` 消息收发和基础校验。
+
+消息统一使用 envelope：
+
+```ts
+interface SuiteMessage<TPayload = unknown> {
+  protocolVersion: 1;
+  source: "seclab-suite" | "seclab-host";
+  type: string;
+  id?: string;
+  requestId?: string;
+  payload?: TPayload;
+  error?: SuiteMessageError;
+}
+```
+
+`id`、`requestId` 和 `error` 首期不强依赖，但保留给后续 RPC。
+
+### Bridge
+
+负责主控与套件的语义协议。
+
+首期内置消息：
+
+- `suite:lifecycle:ready`
+- `host:theme:update`
+- `host:locale:update`
+- `suite:notification:show`
+- `suite:window:focus`
+
+蓝图占位消息：
+
+- `host:context:update`
+- `host:permission:grant`
+- `host:permission:deny`
+- `suite:dialog:confirm`
+- `suite:navigation:open`
+- `suite:window:title:update`
+- `suite:window:dirty:update`
+- `suite:file:open`
+- `suite:file:save`
+- `suite:log:event`
+- `suite:error:report`
+- `suite:lifecycle:heartbeat`
+- `suite:lifecycle:status`
+
+蓝图占位只定义命名和类型方向，不代表当前 SDK 已实现业务行为。
+
+### Adapter
+
+首期只提供无框架 TypeScript API。
+
+后续可以按需增加：
+
+- Vue composable
+- React hook
+- 套件模板初始化工具
+
+## 源码结构
+
+SDK 按职责拆分模块，源码统一放在 `src/` 目录下，避免和包配置文件混在同一层级。
+
+- `src/index.ts`: 公开导出入口，不承载运行逻辑。
+- `src/types.ts`: 公开类型定义。
+- `src/protocol.ts`: 协议版本、消息类型常量、消息创建与校验。
+- `src/environment.ts`: 浏览器环境和 iframe 解析辅助函数。
+- `src/theme.ts`: 主题解析、系统主题降级和 DOM 主题写入。
+- `src/locale.ts`: 浏览器语言降级、语言匹配和语言归一化。
+- `src/suite-bridge.ts`: 套件端 Bridge。
+- `src/host-bridge.ts`: 主控端 Bridge。
+
+## 能力蓝图
+
+### 1. 主题同步
+
+主题状态：
+
+```ts
+interface SuiteThemeState {
+  theme: "light" | "dark" | "auto";
+  resolvedTheme: "light" | "dark";
+  source: "host" | "system";
+}
+```
+
+套件端初始化后立即使用系统主题作为降级方案，并写入：
+
+```ts
+document.documentElement.dataset.theme = resolvedTheme;
+document.documentElement.style.colorScheme = resolvedTheme;
+```
+
+主控发送主题后，套件以主控主题为准。
+
+当前已实现。
+
+### 2. 国际化同步
+
+国际化与主题同级，是体验一致性的基础能力。
+
+当主控语言为中文时，套件不应仍显示英文；当主控切换英文时，套件也应同步切换。套件不应自行读取主控本地存储或 DOM，而是通过 SDK 接收标准语言状态。
+
+蓝图状态：
+
+```ts
+interface SuiteLocaleState {
+  locale: string;
+  source: "host" | "browser" | "default";
+}
+```
+
+协议消息：
+
+- `host:locale:update`
+
+套件端 API：
+
+```ts
+bridge.subscribeLocale((locale) => {
+  i18n.global.locale.value = locale.locale;
+});
+```
+
+独立运行降级：
+
+- 优先使用 `navigator.language`。
+- 套件不支持时使用默认语言。
+
+当前 SDK 已实现 locale 状态维护、订阅和主控消息接收。套件业务是否接入 Vue I18n、React I18n 或其它国际化方案，由套件自行决定。
+
+### 3. 主控上下文
+
+主控上下文用于让套件知道自己运行在哪里，但不暴露主控内部实现。
+
+上下文只传递套件运行需要的稳定信息，例如套件 ID、实例 ID、应用 ID、运行模式、代理基础路径、当前用户和节点摘要。套件不能依赖主控内部 store、路由对象或 DOM 结构。
+
+蓝图 payload：
+
+```ts
+interface SuiteContextPayload {
+  suiteId: string;
+  instanceId?: string;
+  appId?: string;
+  runMode: "hosted" | "standalone";
+  basePath?: string;
+  user?: { id: string; name?: string };
+  node?: { id: string; name?: string };
+}
+```
+
+协议消息：
+
+- `host:context:update`
+
+当前只保留协议占位。
+
+### 4. 能力声明
+
+能力声明是未来权限控制和版本兼容的基础。
+
+套件通过 `suite:lifecycle:ready` 声明自己支持的能力，主控未来也可以返回当前环境开放的能力。这样不同版本的主控和套件可以在运行时协商能力，而不是通过隐式约定硬编码。
+
+蓝图能力：
+
+```ts
+type SuiteCapability =
+  | "theme"
+  | "locale"
+  | "context"
+  | "notification"
+  | "dialog"
+  | "navigation"
+  | "window"
+  | "file"
+  | "diagnostics"
+  | "heartbeat";
+```
+
+当前已用于套件 ready 消息，并已对 `theme`、`locale`、`notification` 提供 SDK 运行逻辑。
+
+### 5. 通知能力
+
+套件不应自行实现与主控割裂的 toast 或 notification。作为套件运行时，套件应优先请求主控展示统一通知，由主控负责样式、位置和生命周期；独立运行时再使用套件自己的本地通知。
+
+协议消息：
+
+- `suite:notification:show`
+
+payload：
+
+```ts
+interface SuiteNotificationPayload {
+  type?: "info" | "success" | "warning" | "error";
+  title: string;
+  message?: string;
+  duration?: number;
+}
+```
+
+套件端调用：
+
+```ts
+const delivered = bridge.notify({
+  type: "success",
+  title: "扫描完成",
+  message: "发现 12 台存活主机",
+});
+
+if (!delivered) {
+  showLocalToast("success", "扫描完成", "发现 12 台存活主机");
+}
+```
+
+设计约束：
+
+- 套件必须声明 `notification` capability。
+- `notify()` 返回 `true` 只表示消息已投递给主控，不表示用户一定看到了通知。
+- 主控首期只展示弹窗，不写入通知历史，避免套件高频操作污染主控历史记录。
+- 通知标题保留套件传入的业务标题，主控不自动拼接套件名称。
+
+当前已实现。
+
+### 6. 确认对话框
+
+危险操作应由主控弹出统一确认框，例如删除报告、停止任务、清理数据。这样可以保证套件和主控交互一致，也方便未来接入权限、审计和二次确认策略。
+
+协议消息：
+
+- `suite:dialog:confirm`
+
+蓝图调用：
+
+```ts
+const confirmed = await bridge.request("suite:dialog:confirm", {
+  title: "删除报告",
+  message: "删除后无法恢复，是否继续？",
+  danger: true,
+});
+```
+
+当前只保留协议占位。
+
+### 7. 导航能力
+
+套件需要打开主控中的其它应用、跳转套件中心、返回桌面或打开外链时，应通过主控导航能力完成，而不是直接假设主控路由结构。
+
+协议消息：
+
+- `suite:navigation:open`
+
+蓝图目标：
+
+- 打开内置应用。
+- 打开套件中心。
+- 返回桌面。
+- 打开外链，并由主控决定是否需要安全提示。
+
+当前只保留协议占位。
+
+### 8. 窗口聚焦、标题与脏状态
+
+套件应能告诉主控当前窗口正在被交互、当前页面标题和是否存在未保存变更。
+
+窗口聚焦用于解决 iframe 内点击事件无法冒泡到主控窗口容器的问题。声明 `window` capability 后，套件端 SDK 会在 `pointerdown` 和 `focusin` 时自动发送聚焦消息；主控收到后把承载窗口置顶。未接入新版 SDK 的套件由主控透明聚焦层兜底。
+
+窗口标题用于让应用窗口、任务栏或未来的窗口管理器展示更具体的上下文。脏状态用于拦截关闭窗口、刷新 iframe 或切换页面，避免用户丢失未保存内容。
+
+协议消息：
+
+- `suite:window:focus`
+- `suite:window:title:update`
+- `suite:window:dirty:update`
+
+当前已实现 `suite:window:focus`，标题和脏状态仍只保留协议占位。
+
+### 9. RPC 请求响应机制
+
+这里的 RPC 不是 gRPC，而是基于 `postMessage` 的 request/response 模型。
+
+当前 envelope 已保留：
+
+- `id`: 请求消息 ID。
+- `requestId`: 响应对应的请求 ID。
+- `error`: 标准错误对象。
+
+未来可以提供：
+
+```ts
+const result = await bridge.request("suite:notification:show", payload);
+```
+
+主控处理后返回同一协议 envelope。这样通知、确认对话框、文件选择、权限请求等能力都可以共享同一套调用模型。
+
+当前只保留字段和设计方向，暂不实现 `request()`。
+
+### 10. 权限模型
+
+权限模型不应在第一版做复杂实现，但协议需要预留位置。
+
+未来套件可能需要请求敏感能力，例如文件访问、主控导航、节点操作或长期任务。主控应能够根据套件来源、用户身份、部署策略和权限配置决定是否授权。
+
+协议消息：
+
+- `host:permission:grant`
+- `host:permission:deny`
+
+未来可扩展：
+
+- `suite:permission:request`
+- `host:permission:update`
+
+当前只保留协议占位。
+
+### 11. 文件选择与下载
+
+很多套件会需要导入、导出或选择文件。由主控提供统一文件能力，可以让体验一致，并为未来的权限控制、审计和跨节点文件访问打基础。
+
+协议消息：
+
+- `suite:file:open`
+- `suite:file:save`
+
+蓝图场景：
+
+- 选择本地规则文件。
+- 导出扫描报告。
+- 保存配置模板。
+- 交给主控决定文件来源和保存位置。
+
+当前只保留协议占位。
+
+### 12. 日志与诊断
+
+套件可以把前端错误、关键事件和诊断信息发送给主控，主控统一记录到平台日志或诊断面板。这样用户反馈问题时，主控可以看到套件侧的异常上下文。
+
+协议消息：
+
+- `suite:log:event`
+- `suite:error:report`
+
+蓝图场景：
+
+- 前端未捕获异常。
+- 接口请求失败。
+- SDK 协议异常。
+- 套件关键生命周期事件。
+
+当前只保留协议占位。
+
+### 13. 心跳与健康状态
+
+主控需要知道 iframe 套件是否 ready、是否卡死、是否处于忙碌状态。心跳和健康状态可以为未来 watchdog、窗口状态提示和异常恢复提供基础。
+
+协议消息：
+
+- `suite:lifecycle:heartbeat`
+- `suite:lifecycle:status`
+
+蓝图状态：
+
+- `ready`
+- `busy`
+- `idle`
+- `error`
+
+当前只保留协议占位。
+
+## 套件端 API
+
+```ts
+const bridge = createSuiteBridge();
+bridge.ready();
+
+bridge.subscribeTheme((theme) => {
+  console.log(theme.resolvedTheme);
+});
+
+bridge.destroy();
+```
+
+默认能力：
+
+- `capabilities: ['theme']`
+- `target: document`
+- `targetOrigin: '*'`
+- `applyTheme: true`
+
+## 主控端 API
+
+```ts
+const bridge = createSuiteHostBridge({
+  iframe: () => iframeElement,
+  theme: () => currentTheme,
+});
+
+bridge.sendTheme();
+bridge.destroy();
+```
+
+主控在以下时机发送主题：
+
+- iframe load 后。
+- 收到 `suite:lifecycle:ready` 后。
+- 主控主题变化后。
+
+## 独立运行
+
+套件脱离主控直接访问时，SDK 使用：
+
+```ts
+window.matchMedia("(prefers-color-scheme: dark)");
+```
+
+并监听系统主题变化。
+
+## 安全边界
+
+首期以本地和内网部署快速落地为目标，默认 `targetOrigin: '*'`。
+
+后续增强项：
+
+- origin 白名单。
+- capability 校验。
+- RPC 超时。
+- 协议契约测试。
+- 主控上下文权限声明。
+
+## 当前实现范围
+
+- 套件端 Bridge。
+- 主控端 Bridge。
+- 主题同步。
+- 国际化同步。
+- 独立运行主题降级。
+- 为后续 RPC 保留消息字段。
+
+## 路线图
+
+首期必须实现：
+
+- 主题同步。
+- 国际化同步。
+- 生命周期 ready。
+- 基础 envelope。
+
+近期实现：
+
+- 主控上下文。
+- 通知。
+- 确认对话框。
+
+中期实现：
+
+- 主控导航。
+- 窗口标题。
+- 未保存状态。
+- request/response RPC。
+
+长期实现：
+
+- 权限模型。
+- 文件能力。
+- 诊断上报。
+- 心跳与健康状态。

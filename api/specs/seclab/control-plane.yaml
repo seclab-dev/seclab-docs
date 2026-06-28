@@ -1,0 +1,2179 @@
+openapi: 3.1.0
+info:
+  title: SecLab Master API
+  version: 0.1.0-alpha.1
+  description: SecLab Master 控制面接口。首批条目迁移自现有人工文档，默认尚未与实现逐项核对。
+servers:
+  - url: /api/v1
+tags:
+  - name: 节点管理
+  - name: Runtime
+  - name: 认证
+  - name: 审计
+  - name: 通知
+  - name: 系统管理
+  - name: 应用管理
+  - name: 桌面应用
+  - name: 镜像管理
+  - name: 在线升级
+  - name: 脚本管理
+  - name: 仿真场景
+  - name: 套件中心
+  - name: 任务调度
+  - name: 运行时代理
+paths:
+  /nodes/list:
+    get:
+      operationId: seclabNodesList
+      tags: [节点管理]
+      summary: 查询节点列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回节点列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /nodes/create:
+    post:
+      operationId: seclabNodesCreate
+      tags: [节点管理]
+      summary: 创建新节点
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 节点已创建, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /nodes/precheck:
+    post:
+      operationId: seclabNodesPrecheck
+      tags: [节点管理]
+      summary: 新节点部署预检
+      description: 对待新增节点执行 SSH、权限、systemd、目录、端口、Docker、已有 Agent 与版本兼容预检。
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NodePrecheckRequest' }
+      responses:
+        '200': { description: 返回节点预检结果, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: [architecture/SecLab分布式部署与节点管理路线图.md]
+        reviewedAt: null
+        notes: 需要核对 NodePrecheckResponse 的完整字段。
+  /nodes/deploy:
+    post:
+      operationId: seclabNodesCreateAndDeploy
+      tags: [节点管理]
+      summary: 创建并部署节点
+      description: 服务端在创建库存记录前重新执行严格预检，预检失败时不创建节点记录。
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NodePrecheckRequest' }
+      responses:
+        '200': { description: 节点部署任务已创建, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: [architecture/SecLab分布式部署与节点管理路线图.md]
+        reviewedAt: null
+        notes: 请求结构暂按旧文档中的预检字段登记。
+  /node/{node_id}/detail:
+    get:
+      operationId: seclabNodeDetail
+      tags: [节点管理]
+      summary: 查询单个节点详情
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回节点详情, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /node/{node_id}/update:
+    put:
+      operationId: seclabNodeUpdate
+      tags: [节点管理]
+      summary: 更新节点配置
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 更新成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /node/{node_id}/remove:
+    delete:
+      operationId: seclabNodeRemove
+      tags: [节点管理]
+      summary: 删除节点记录
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 删除成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /node/{node_id}/observations:
+    get:
+      operationId: seclabNodeObservations
+      tags: [节点管理]
+      summary: 获取节点历史观测数据
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: 返回历史观测数据, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /node/{node_id}/sessions:
+    get:
+      operationId: seclabNodeSessions
+      tags: [节点管理]
+      summary: 获取节点会话历史
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: 返回会话历史, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /node/{node_id}/deploy:
+    post:
+      operationId: seclabNodeDeploy
+      tags: [节点管理]
+      summary: 部署已有节点
+      description: 对已存在节点发起部署，并在写入配置或重启前检查目标机冲突。
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seclabUrl: { type: string, format: uri }
+      responses:
+        '200': { description: 节点部署任务已创建, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: [architecture/SecLab分布式部署与节点管理路线图.md]
+        reviewedAt: null
+        notes: ''
+  /node/{node_id}/deploy-progress:
+    get:
+      operationId: seclabNodeDeployProgress
+      tags: [节点管理]
+      summary: 获取节点部署进度
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回部署进度, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /node/{node_id}/check:
+    post:
+      operationId: seclabNodeCheck
+      tags: [节点管理]
+      summary: 执行节点健康检查
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 检查已执行, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /node/{node_id}/repair:
+    post:
+      operationId: seclabNodeRepair
+      tags: [节点管理]
+      summary: 修复节点
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 修复任务已提交, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /node/{node_id}/retire:
+    post:
+      operationId: seclabNodeRetire
+      tags: [节点管理]
+      summary: 下线/退役节点
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 退役成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /node/{node_id}/uninstall:
+    post:
+      operationId: seclabNodeUninstall
+      tags: [节点管理]
+      summary: 卸载节点 Agent
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 卸载成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/nodes.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /runtime/callback-probe:
+    get:
+      operationId: seclabRuntimeCallbackProbe
+      tags: [Runtime]
+      summary: Runtime 回连探针
+      description: 无状态探针，不创建注册、心跳、会话或证书状态。
+      security: []
+      responses:
+        '200': { description: 返回主控版本与 Runtime 协议版本, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/runtime.rs }
+        designDocs: [operations/SecLab运行时协议与运维手册.md]
+        reviewedAt: null
+        notes: ''
+  /runtime/enroll:
+    post:
+      operationId: seclabRuntimeEnroll
+      tags: [Runtime]
+      summary: Agent 首次纳管
+      description: Agent 使用 enrollment token 首次建立身份、证书和 Runtime 会话。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuntimeCompatibilityRequest' }
+      responses:
+        '200': { description: 纳管成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/runtime.rs }
+        designDocs: [operations/SecLab运行时协议与运维手册.md]
+        reviewedAt: null
+        notes: 旧文档只明确 compatibility 字段，其他字段待核对。
+  /runtime/register:
+    post:
+      operationId: seclabRuntimeRegister
+      tags: [Runtime]
+      summary: Agent 再注册
+      description: 已具备身份的 Agent 建立或恢复 Runtime 会话。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuntimeCompatibilityRequest' }
+      responses:
+        '200': { description: 注册成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/runtime.rs }
+        designDocs: [operations/SecLab运行时协议与运维手册.md]
+        reviewedAt: null
+        notes: 旧文档只明确 compatibility 字段，其他字段待核对。
+  /runtime/heartbeat:
+    post:
+      operationId: seclabRuntimeHeartbeat
+      tags: [Runtime]
+      summary: Agent 心跳续租
+      description: 校验 Runtime 会话和租约并刷新 Agent 在线状态。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuntimeCompatibilityRequest' }
+      responses:
+        '200': { description: 心跳已处理, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/runtime.rs }
+        designDocs: [operations/SecLab运行时协议与运维手册.md]
+        reviewedAt: null
+        notes: 旧文档只明确 compatibility 字段，其他字段待核对。
+  /runtime/deregister:
+    post:
+      operationId: seclabRuntimeDeregister
+      tags: [Runtime]
+      summary: Agent 注销运行时会话
+      security: []
+      responses:
+        '200': { description: 注销成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/runtime.rs }
+        designDocs: [operations/SecLab运行时协议与运维手册.md]
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /runtime/rotate-certificate:
+    post:
+      operationId: seclabRuntimeRotateCertificate
+      tags: [Runtime]
+      summary: 轮换 Agent 证书
+      security: []
+      responses:
+        '200': { description: 轮换成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/runtime.rs }
+        designDocs: [operations/SecLab运行时协议与运维手册.md]
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /runtime/tasks/runs/report:
+    post:
+      operationId: seclabRuntimeTasksRunsReport
+      tags: [Runtime]
+      summary: 上报任务运行记录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 上报成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/runtime.rs }
+        designDocs: [operations/SecLab运行时协议与运维手册.md]
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /runtime/tasks/snapshot:
+    get:
+      operationId: seclabRuntimeTasksSnapshot
+      tags: [Runtime]
+      summary: 获取任务快照
+      security: []
+      responses:
+        '200': { description: 获取成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/runtime.rs }
+        designDocs: [operations/SecLab运行时协议与运维手册.md]
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /runtime/upgrades/artifacts/{version}/{component}/{target_triple}/download:
+    get:
+      operationId: seclabRuntimeDownloadUpgradeArtifact
+      tags: [Runtime]
+      summary: 下载升级介质
+      security: []
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema: { type: string }
+        - name: component
+          in: path
+          required: true
+          schema: { type: string }
+        - name: target_triple
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回升级包文件流 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/runtime.rs }
+        designDocs: [operations/SecLab运行时协议与运维手册.md]
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /auth/login:
+    post:
+      operationId: seclabAuthLogin
+      tags: [认证]
+      summary: 管理员登录
+      description: 创建服务端会话并设置 seclab_session HttpOnly Cookie。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { description: 登录成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/auth.rs }
+        designDocs: [standards/SecLab单用户认证与会话管理设计.md]
+        reviewedAt: null
+        notes: ''
+  /auth/me:
+    get:
+      operationId: seclabAuthCurrentSession
+      tags: [认证]
+      summary: 获取当前会话
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回管理员与会话摘要, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/auth.rs }
+        designDocs: [standards/SecLab单用户认证与会话管理设计.md]
+        reviewedAt: null
+        notes: ''
+  /auth/logout:
+    post:
+      operationId: seclabAuthLogout
+      tags: [认证]
+      summary: 注销当前会话
+      description: 幂等撤销服务端会话并清理 Cookie。
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 会话已注销, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/auth.rs }
+        designDocs: [standards/SecLab单用户认证与会话管理设计.md]
+        reviewedAt: null
+        notes: ''
+  /platform/logs:
+    post:
+      operationId: seclabPlatformLogsQuery
+      tags: [审计]
+      summary: 查询审计日志
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogQuery' }
+      responses:
+        '200': { description: 返回审计日志分页数据, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/platform.rs }
+        designDocs: [standards/SecLab平台日志设计规范.md]
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /platform/runtime-logs/files:
+    get:
+      operationId: seclabPlatformRuntimeLogFiles
+      tags: [审计]
+      summary: 查询运行日志文件列表
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: service
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200': { description: 返回日志文件列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/platform.rs }
+        designDocs: [standards/SecLab平台日志设计规范.md]
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /platform/runtime-logs/query:
+    post:
+      operationId: seclabPlatformQueryRuntimeLogs
+      tags: [审计]
+      summary: 查询具体运行日志内容
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 返回日志内容, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/platform.rs }
+        designDocs: [standards/SecLab平台日志设计规范.md]
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /notifications:
+    get:
+      operationId: seclabNotificationsList
+      tags: [通知]
+      summary: 查询通知历史
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回通知历史分页数据, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/notifications.rs }
+        designDocs: []
+        reviewedAt: null
+        notes: ''
+    post:
+      operationId: seclabNotificationsCreate
+      tags: [通知]
+      summary: 创建通知历史
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationCreateRequest' }
+      responses:
+        '200': { description: 通知已创建, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/notifications.rs }
+        designDocs: []
+        reviewedAt: null
+        notes: ''
+    delete:
+      operationId: seclabNotificationsClear
+      tags: [通知]
+      summary: 清空通知历史
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 通知历史已清空, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: unverified
+        source: { repository: seclab, file: crates/seclab/src/api/notifications.rs }
+        designDocs: []
+        reviewedAt: null
+        notes: ''
+  /notifications/batch:
+    delete:
+      operationId: seclabNotificationsBatchDelete
+      tags: [通知]
+      summary: 批量删除通知历史
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 批量删除成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/notifications.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /seclab/network:
+    get:
+      operationId: seclabSystemGetNetwork
+      tags: [系统管理]
+      summary: 获取系统网络配置
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回网络配置, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/seclab.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+    put:
+      operationId: seclabSystemUpdateNetwork
+      tags: [系统管理]
+      summary: 更新系统网络配置
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 更新成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/seclab.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /seclab/network-interfaces:
+    get:
+      operationId: seclabSystemGetNetworkInterfaces
+      tags: [系统管理]
+      summary: 获取系统网络接口列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回网络接口列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/seclab.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /seclab/metrics:
+    get:
+      operationId: seclabSystemGetMetrics
+      tags: [系统管理]
+      summary: 获取系统性能指标
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回性能指标, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/seclab.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /apps:
+    get:
+      operationId: seclabAppsList
+      tags: [应用管理]
+      summary: 获取内置应用目录列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回应用目录列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/apps.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /desktop/shortcuts:
+    get:
+      operationId: seclabDesktopGetShortcuts
+      tags: [桌面应用]
+      summary: 获取桌面快捷方式配置
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回快捷方式列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/desktop_apps.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+    put:
+      operationId: seclabDesktopUpdateShortcuts
+      tags: [桌面应用]
+      summary: 更新桌面快捷方式配置
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 更新成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/desktop_apps.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /docker/images/distribute:
+    post:
+      operationId: seclabDockerDistributeImage
+      tags: [镜像管理]
+      summary: 分发 Docker 镜像
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 分发任务已提交, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/docker.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /docker/images/distribute/local:
+    post:
+      operationId: seclabDockerDistributeLocalImage
+      tags: [镜像管理]
+      summary: 分发本地 Docker 镜像
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 分发任务已提交, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/docker.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /docker/images/distribute/status:
+    get:
+      operationId: seclabDockerGetDistributeStatus
+      tags: [镜像管理]
+      summary: 获取 Docker 镜像分发状态
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回分发状态, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/docker.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /docker/local-images:
+    get:
+      operationId: seclabDockerListLocalImages
+      tags: [镜像管理]
+      summary: 获取本地 Docker 镜像列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回本地镜像列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/docker.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /docker/local-images/pull:
+    post:
+      operationId: seclabDockerPullLocalImage
+      tags: [镜像管理]
+      summary: 拉取本地 Docker 镜像
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 拉取任务已提交, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/docker.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /upgrades/releases/list:
+    get:
+      operationId: seclabUpgradesReleasesList
+      tags: [在线升级]
+      summary: 获取升级发布包列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回发布包列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /upgrades/releases/sync:
+    post:
+      operationId: seclabUpgradesReleasesSync
+      tags: [在线升级]
+      summary: 同步升级发布包
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 同步任务已启动, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /upgrades/releases/upload:
+    post:
+      operationId: seclabUpgradesReleasesUpload
+      tags: [在线升级]
+      summary: 上传升级发布包
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200': { description: 上传成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /upgrades/release/{version}/delete:
+    delete:
+      operationId: seclabUpgradesReleaseDelete
+      tags: [在线升级]
+      summary: 删除指定版本的发布包
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 删除成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /upgrades/plan/create:
+    post:
+      operationId: seclabUpgradesPlanCreate
+      tags: [在线升级]
+      summary: 创建升级计划
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 计划已创建, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /upgrades/plan/latest:
+    get:
+      operationId: seclabUpgradesPlanLatest
+      tags: [在线升级]
+      summary: 获取最新的升级计划
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回最新计划, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /upgrades/plan/{plan_id}/start:
+    post:
+      operationId: seclabUpgradesPlanStart
+      tags: [在线升级]
+      summary: 启动升级计划
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 计划已启动, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /upgrades/plan/{plan_id}/detail:
+    get:
+      operationId: seclabUpgradesPlanDetail
+      tags: [在线升级]
+      summary: 获取升级计划详情
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回计划详情, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /upgrades/plan/{plan_id}/cancel:
+    post:
+      operationId: seclabUpgradesPlanCancel
+      tags: [在线升级]
+      summary: 取消升级计划
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 计划已取消, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /scripts:
+    get:
+      operationId: seclabScriptsList
+      tags: [脚本管理]
+      summary: 获取脚本列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回脚本列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/scripts.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+    post:
+      operationId: seclabScriptsCreate
+      tags: [脚本管理]
+      summary: 创建脚本
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 脚本已创建, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/scripts.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /scripts/{script_id}/detail:
+    get:
+      operationId: seclabScriptsDetail
+      tags: [脚本管理]
+      summary: 获取指定脚本详情
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: script_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回脚本详情, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/scripts.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /scripts/{script_id}/update:
+    put:
+      operationId: seclabScriptsUpdate
+      tags: [脚本管理]
+      summary: 更新指定脚本
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: script_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 更新成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/scripts.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /scripts/{script_id}/remove:
+    delete:
+      operationId: seclabScriptsRemove
+      tags: [脚本管理]
+      summary: 删除指定脚本
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: script_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 删除成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/scripts.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/rule:
+    post:
+      operationId: seclabSimulationCreateRule
+      tags: [仿真场景]
+      summary: 创建仿真规则
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 创建成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/rules:
+    get:
+      operationId: seclabSimulationListRules
+      tags: [仿真场景]
+      summary: 获取仿真规则列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回规则列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/rule/{id}:
+    delete:
+      operationId: seclabSimulationDeleteRule
+      tags: [仿真场景]
+      summary: 删除仿真规则
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 删除成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/rule-package/import:
+    post:
+      operationId: seclabSimulationImportRulePackage
+      tags: [仿真场景]
+      summary: 导入规则包
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200': { description: 导入成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/rule-packages/list:
+    get:
+      operationId: seclabSimulationListRulePackages
+      tags: [仿真场景]
+      summary: 获取规则包列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回规则包列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/rule-package/current:
+    get:
+      operationId: seclabSimulationGetCurrentRulePackage
+      tags: [仿真场景]
+      summary: 获取当前应用的规则包
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回当前规则包, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/deploy:
+    post:
+      operationId: seclabSimulationDeploy
+      tags: [仿真场景]
+      summary: 部署仿真场景
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 部署成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/undeploy:
+    post:
+      operationId: seclabSimulationUndeploy
+      tags: [仿真场景]
+      summary: 卸载仿真场景
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 卸载成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/capture/start:
+    post:
+      operationId: seclabSimulationCaptureStart
+      tags: [仿真场景]
+      summary: 开启流量捕获
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 开启成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/capture/stop:
+    post:
+      operationId: seclabSimulationCaptureStop
+      tags: [仿真场景]
+      summary: 停止流量捕获
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 停止成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/capture/reset:
+    post:
+      operationId: seclabSimulationCaptureReset
+      tags: [仿真场景]
+      summary: 重置流量捕获
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 重置成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/node/{node_id}/instances:
+    get:
+      operationId: seclabSimulationListNodeInstances
+      tags: [仿真场景]
+      summary: 获取节点上的仿真实例列表
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回实例列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/node/{node_id}/logs:
+    get:
+      operationId: seclabSimulationListNodeLogs
+      tags: [仿真场景]
+      summary: 获取节点仿真日志
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回日志, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation/pcap/download/{filename}:
+    get:
+      operationId: seclabSimulationDownloadPcap
+      tags: [仿真场景]
+      summary: 下载 PCAP 文件
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回 PCAP 文件流 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation-public/log:
+    post:
+      operationId: seclabSimulationPublicReportLog
+      tags: [仿真场景]
+      summary: 公开上报仿真日志
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 上报成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /simulation-public/pcap:
+    post:
+      operationId: seclabSimulationPublicReportPcap
+      tags: [仿真场景]
+      summary: 公开上报 PCAP 数据
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 上报成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/simulation.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /suites/list:
+    get:
+      operationId: seclabSuitesList
+      tags: [套件中心]
+      summary: 获取套件列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回套件列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /suites/import:
+    post:
+      operationId: seclabSuitesImport
+      tags: [套件中心]
+      summary: 导入套件包
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200': { description: 导入成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /suites/{suite_id}/install:
+    post:
+      operationId: seclabSuitesInstall
+      tags: [套件中心]
+      summary: 安装套件
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: suite_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 安装任务已启动, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /suites/{suite_id}/assets/{asset_path}:
+    get:
+      operationId: seclabSuitesGetAsset
+      tags: [套件中心]
+      summary: 获取套件资产
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: suite_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: asset_path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回资产内容 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /suites/instance/{instance_id}/enable:
+    post:
+      operationId: seclabSuitesEnableInstance
+      tags: [套件中心]
+      summary: 启用套件实例
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 启用成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /suites/instance/{instance_id}/disable:
+    post:
+      operationId: seclabSuitesDisableInstance
+      tags: [套件中心]
+      summary: 禁用套件实例
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 禁用成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /suites/instance/{instance_id}/uninstall:
+    post:
+      operationId: seclabSuitesUninstallInstance
+      tags: [套件中心]
+      summary: 卸载套件实例
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 卸载成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /suites/instance/{instance_id}/assets/{asset_path}:
+    get:
+      operationId: seclabSuitesGetInstanceAsset
+      tags: [套件中心]
+      summary: 获取套件实例的资产
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: asset_path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回资产内容 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /suites/instance/{instance_id}/proxy/{entry_id}:
+    get:
+      operationId: seclabSuitesProxyInstanceEntryGet
+      tags: [套件中心]
+      summary: 代理套件实例的入口请求
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: entry_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 代理返回内容 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+    post:
+      operationId: seclabSuitesProxyInstanceEntryPost
+      tags: [套件中心]
+      summary: 代理套件实例的入口请求
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: entry_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 代理返回内容 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /tasks:
+    get:
+      operationId: seclabTasksList
+      tags: [任务调度]
+      summary: 获取任务列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 返回任务列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/task_scheduler.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+    post:
+      operationId: seclabTasksCreate
+      tags: [任务调度]
+      summary: 创建任务
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 任务创建成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/task_scheduler.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /tasks/{id}:
+    put:
+      operationId: seclabTasksUpdate
+      tags: [任务调度]
+      summary: 更新任务
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 更新成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/task_scheduler.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+    delete:
+      operationId: seclabTasksRemove
+      tags: [任务调度]
+      summary: 删除任务
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 删除成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/task_scheduler.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /tasks/{id}/toggle:
+    post:
+      operationId: seclabTasksToggle
+      tags: [任务调度]
+      summary: 启停任务
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 操作成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/task_scheduler.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /tasks/{id}/sync:
+    post:
+      operationId: seclabTasksSync
+      tags: [任务调度]
+      summary: 同步任务到节点
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 同步任务已下发, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/task_scheduler.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /tasks/{id}/run:
+    post:
+      operationId: seclabTasksRunOnce
+      tags: [任务调度]
+      summary: 立即执行一次任务
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 执行成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/task_scheduler.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /tasks/{id}/runs:
+    get:
+      operationId: seclabTasksListRuns
+      tags: [任务调度]
+      summary: 获取任务执行历史记录
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回历史记录, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/task_scheduler.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /agent/websocket/{path}:
+    get:
+      operationId: seclabAgentWebsocketProxy
+      tags: [运行时代理]
+      summary: WebSocket 运行时代理
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 升级为 WebSocket 连接 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/agent.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+  /agent/{path}:
+    get:
+      operationId: seclabAgentGetProxy
+      tags: [运行时代理]
+      summary: 运行时代理 GET 请求
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回代理结果 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/agent.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+    post:
+      operationId: seclabAgentPostProxy
+      tags: [运行时代理]
+      summary: 运行时代理 POST 请求
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 返回代理结果 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/agent.rs }
+        designDocs: []
+        reviewedAt: "2026-06-27"
+        notes: ''
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: seclab_session
+  responses:
+    BadRequest:
+      description: 请求参数或业务状态不合法。
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } }
+    Unauthorized:
+      description: 未登录或会话无效。
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } }
+    NotFound:
+      description: 目标资源不存在。
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } }
+  schemas:
+    ApiResponse:
+      type: object
+      required: [success, code, message]
+      properties:
+        success: { type: boolean }
+        code: { type: integer }
+        message: { type: string }
+        messageKey: { type: [string, 'null'] }
+        errorCode: { type: [string, 'null'] }
+        data: {}
+    NodePrecheckRequest:
+      type: object
+      required: [addr, port, user, authMode, servicePort, installDir]
+      properties:
+        addr: { type: string }
+        port: { type: string }
+        user: { type: string }
+        authMode: { type: string, enum: [password, key] }
+        pwd: { type: string, writeOnly: true }
+        servicePort: { type: string }
+        installDir: { type: string }
+        seclabUrl: { type: string, format: uri }
+    RuntimeCompatibilityRequest:
+      type: object
+      required: [compatibility]
+      additionalProperties: true
+      properties:
+        compatibility:
+          type: object
+          required: [agentVersion, runtimeProtocolVersion, minSupportedControllerVersion]
+          properties:
+            agentVersion: { type: string }
+            runtimeProtocolVersion: { type: string }
+            minSupportedControllerVersion: { type: string }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, writeOnly: true }
+    LogQuery:
+      type: object
+      additionalProperties: true
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        modules: { type: array, items: { type: string } }
+        actions: { type: array, items: { type: string } }
+        actionPrefixes: { type: array, items: { type: string } }
+        statuses: { type: array, items: { type: string } }
+        startAt: { type: integer }
+        endAt: { type: integer }
+        keyword: { type: string }
+    NotificationCreateRequest:
+      type: object
+      required: [level, message]
+      properties:
+        level: { type: string, enum: [success, info, warning, error] }
+        message: { type: string }
