@@ -1666,6 +1666,7 @@ paths:
       operationId: seclabSuitesInstall
       tags: [套件中心]
       summary: 安装套件
+      description: 启动套件安装后台任务，前端应使用返回的 taskId 查询安装进度。
       security: [{ cookieAuth: [] }]
       parameters:
         - name: suite_id
@@ -1678,7 +1679,16 @@ paths:
           application/json:
             schema: { type: object, additionalProperties: true }
       responses:
-        '200': { description: 安装任务已启动, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '200':
+          description: 安装任务已启动
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SuiteInstallTaskResponse' }
       x-seclab:
         owner: seclab
         layer: control-plane
@@ -1686,7 +1696,72 @@ paths:
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
         designDocs: []
-        reviewedAt: "2026-06-27"
+        reviewedAt: "2026-06-29"
+        notes: ''
+  /suites/install-progress:
+    get:
+      operationId: seclabSuitesInstallProgress
+      tags: [套件中心]
+      summary: 查询套件安装进度
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: taskId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 返回套件安装进度
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SuiteInstallProgressResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-29"
+        notes: ''
+  /suites/install-progress/{task_id}/cancel:
+    post:
+      operationId: seclabSuitesCancelInstall
+      tags: [套件中心]
+      summary: 取消套件安装任务
+      description: 请求取消仍在执行的套件安装任务；已拉取的 Docker 镜像不会被删除。
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 已请求取消或任务已结束
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SuiteInstallProgressResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: []
+        reviewedAt: "2026-06-29"
         notes: ''
   /suites/{suite_id}/assets/{asset_path}:
     get:
@@ -2128,6 +2203,27 @@ components:
         messageKey: { type: [string, 'null'] }
         errorCode: { type: [string, 'null'] }
         data: {}
+    SuiteInstallTaskResponse:
+      type: object
+      required: [taskId, instanceId]
+      properties:
+        taskId: { type: string }
+        instanceId: { type: string }
+    SuiteInstallProgressResponse:
+      type: object
+      required:
+        [taskId, instanceId, nodeId, progressPercent, status, currentStep, isFinished, cancelRequested]
+      properties:
+        taskId: { type: string }
+        instanceId: { type: string }
+        nodeId: { type: string }
+        progressPercent: { type: integer, minimum: 0, maximum: 100 }
+        status: { type: string, enum: [queued, running, canceling, success, failed, canceled] }
+        currentStep: { type: string }
+        currentImage: { type: [string, 'null'] }
+        isFinished: { type: boolean }
+        error: { type: [string, 'null'] }
+        cancelRequested: { type: boolean }
     NodePrecheckRequest:
       type: object
       required: [addr, port, user, authMode, servicePort, installDir]
