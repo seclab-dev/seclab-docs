@@ -107,7 +107,7 @@ watch(
         <SecLabIcon name="success" :size="18" />
         <div>
           <strong>{{ metrics.verified }}</strong
-          ><span>已人工核对</span>
+          ><span>已核对</span>
         </div>
       </div>
       <div class="summary-item is-muted">
