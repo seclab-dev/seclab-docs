@@ -858,8 +858,14 @@ paths:
     get:
       operationId: seclabAppsList
       tags: [应用管理]
-      summary: 获取内置应用目录列表
+      summary: 获取节点应用目录列表
       security: [{ cookieAuth: [] }]
+      parameters:
+        - name: nodeId
+          in: query
+          required: false
+          schema: { type: string, default: local }
+          description: 目标节点 ID；省略时使用本地节点。
       responses:
         '200': { description: 返回应用目录列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
       x-seclab:
@@ -868,8 +874,8 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/apps.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
   /desktop/shortcuts:
     get:
@@ -877,6 +883,12 @@ paths:
       tags: [桌面应用]
       summary: 获取桌面快捷方式配置
       security: [{ cookieAuth: [] }]
+      parameters:
+        - name: nodeId
+          in: query
+          required: false
+          schema: { type: string, default: local }
+          description: 目标节点 ID；省略时使用本地节点。
       responses:
         '200': { description: 返回快捷方式列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
       x-seclab:
@@ -885,14 +897,20 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/desktop_apps.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
     put:
       operationId: seclabDesktopUpdateShortcuts
       tags: [桌面应用]
       summary: 更新桌面快捷方式配置
       security: [{ cookieAuth: [] }]
+      parameters:
+        - name: nodeId
+          in: query
+          required: false
+          schema: { type: string, default: local }
+          description: 目标节点 ID；省略时使用本地节点。
       requestBody:
         required: true
         content:
@@ -906,8 +924,8 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/desktop_apps.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
   /docker/images/distribute:
     post:
@@ -1625,6 +1643,12 @@ paths:
       tags: [套件中心]
       summary: 获取套件列表
       security: [{ cookieAuth: [] }]
+      parameters:
+        - name: nodeId
+          in: query
+          required: false
+          schema: { type: string, default: local }
+          description: 目标节点 ID；返回该节点上的套件实例状态。
       responses:
         '200': { description: 返回套件列表, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
       x-seclab:
@@ -1633,8 +1657,8 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
   /suites/import:
     post:
@@ -1658,8 +1682,8 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
   /suites/{suite_id}/install:
     post:
@@ -1677,7 +1701,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, additionalProperties: true }
+            schema:
+              type: object
+              properties:
+                nodeId: { type: string, default: local }
       responses:
         '200':
           description: 安装任务已启动
@@ -1695,18 +1722,42 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-29"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
-  /suites/install-progress:
+  /suites/{suite_id}:
+    delete:
+      operationId: seclabSuitesDelete
+      tags: [套件中心]
+      summary: 删除套件目录
+      description: 仅当套件没有任何节点实例时允许删除。
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: suite_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 删除成功, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
+        notes: ''
+  /suite-install-tasks/{task_id}:
     get:
       operationId: seclabSuitesInstallProgress
       tags: [套件中心]
       summary: 查询套件安装进度
       security: [{ cookieAuth: [] }]
       parameters:
-        - name: taskId
-          in: query
+        - name: task_id
+          in: path
           required: true
           schema: { type: string }
       responses:
@@ -1727,10 +1778,10 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-29"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
-  /suites/install-progress/{task_id}/cancel:
+  /suite-install-tasks/{task_id}/cancel:
     post:
       operationId: seclabSuitesCancelInstall
       tags: [套件中心]
@@ -1760,8 +1811,8 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-29"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
   /suites/{suite_id}/assets/{asset_path}:
     get:
@@ -1786,10 +1837,10 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
-  /suites/instance/{instance_id}/enable:
+  /suite-instances/{instance_id}/enable:
     post:
       operationId: seclabSuitesEnableInstance
       tags: [套件中心]
@@ -1808,10 +1859,10 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
-  /suites/instance/{instance_id}/disable:
+  /suite-instances/{instance_id}/disable:
     post:
       operationId: seclabSuitesDisableInstance
       tags: [套件中心]
@@ -1830,10 +1881,10 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
-  /suites/instance/{instance_id}/uninstall:
+  /suite-instances/{instance_id}/uninstall:
     post:
       operationId: seclabSuitesUninstallInstance
       tags: [套件中心]
@@ -1857,10 +1908,10 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
-  /suites/instance/{instance_id}/assets/{asset_path}:
+  /suite-instances/{instance_id}/assets/{asset_path}:
     get:
       operationId: seclabSuitesGetInstanceAsset
       tags: [套件中心]
@@ -1883,10 +1934,10 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
-  /suites/instance/{instance_id}/proxy/{entry_id}:
+  /suite-instances/{instance_id}/proxy/{entry_id}:
     get:
       operationId: seclabSuitesProxyInstanceEntryGet
       tags: [套件中心]
@@ -1909,8 +1960,8 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
     post:
       operationId: seclabSuitesProxyInstanceEntryPost
@@ -1934,8 +1985,67 @@ paths:
         lifecycle: active
         implementationStatus: verified
         source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
-        designDocs: []
-        reviewedAt: "2026-06-27"
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
+        notes: ''
+  /suite-instances/{instance_id}/proxy/{entry_id}/{path}:
+    get:
+      operationId: seclabSuitesProxyInstanceEntryPathGet
+      tags: [套件中心]
+      summary: 代理套件实例入口的子路径请求
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: entry_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 代理返回内容 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
+        notes: ''
+    post:
+      operationId: seclabSuitesProxyInstanceEntryPathPost
+      tags: [套件中心]
+      summary: 代理套件实例入口的子路径请求
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: entry_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 代理返回内容 }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/suites.rs }
+        designDocs: [suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-07-07"
         notes: ''
   /tasks:
     get:
@@ -2191,6 +2301,9 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } }
     NotFound:
       description: 目标资源不存在。
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } }
+    Conflict:
+      description: 目标资源存在状态冲突。
       content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } }
   schemas:
     ApiResponse:
