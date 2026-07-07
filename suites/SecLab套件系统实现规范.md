@@ -1,0 +1,262 @@
+# SecLab 套件系统实现规范
+
+## 1. 范围
+
+本文档定义 SecLab Compose 套件在主控、Agent、应用库和桌面中的运行模型、数据边界、API 形态和交互约束。
+
+本文档适用于 SecLab `0.1.0-alpha` 之后的套件系统实现。Alpha 阶段不保证旧数据库迁移兼容，数据库结构以当前初始 schema 为准。
+
+## 2. 领域模型
+
+### 2.1 套件目录
+
+套件目录由主控维护，记录可安装的套件包元数据。
+
+核心属性：
+
+| 字段 | 说明 |
+| --- | --- |
+| `suite_id` | 全局唯一套件 ID。 |
+| `version` | 套件版本。 |
+| `manifest_json` | `suite.yaml` 解析后的清单内容。 |
+| `package_json` | 套件包快照。 |
+| `checksum` | 套件包校验值。 |
+| `status` | 目录状态。 |
+
+套件目录不表示运行实例。导入套件只进入目录，不自动安装到任何节点。
+
+### 2.2 套件实例
+
+套件实例表示某个套件安装在某个节点上的运行单元。
+
+核心属性：
+
+| 字段 | 说明 |
+| --- | --- |
+| `instance_id` | 套件实例 ID。 |
+| `suite_id` | 关联的套件目录 ID。 |
+| `node_id` | 实例所属节点 ID；本地节点固定为 `local`。 |
+| `compose_project_name` | Agent 侧 Docker Compose project 名称。 |
+| `status` | `installing`、`enabled`、`disabled`、`uninstalling`、`error` 等生命周期状态。 |
+
+约束：
+
+1. 同一节点上同一 `suite_id` 只能存在一个套件实例。
+2. 同一套件可以分别安装到不同节点。
+3. 如果同一节点需要多个副本，应使用 Docker 应用中的 Compose 项目自行维护，不应使用套件系统。
+
+### 2.3 套件应用入口
+
+套件应用入口由套件实例生成，进入当前节点的应用目录。
+
+核心属性：
+
+| 字段 | 说明 |
+| --- | --- |
+| `app_id` | 应用入口 ID，格式为 `suite:{instance_id}:{entry_id}`。 |
+| `suite_instance_id` | 所属套件实例。 |
+| `node_id` | 所属节点。 |
+| `app_entry_id` | `suite.yaml` 中的入口 ID。 |
+| `entry_type` | `proxied_web` 或 `compose_detail`。 |
+| `entry_target` | 入口目标信息。 |
+
+应用目录按 `nodeId` 查询。内置应用始终返回，套件应用只返回目标节点下已启用实例的入口。
+
+## 3. 节点作用域
+
+### 3.1 节点上下文
+
+桌面和应用库以当前节点为上下文。
+
+规则：
+
+1. 切换节点后，应用库重新加载目标节点的应用目录。
+2. 切换节点后，桌面重新加载目标节点的快捷方式布局。
+3. 套件中心展示目标节点上的安装状态和实例状态。
+4. 套件安装、启用、停用、卸载均作用于实例所属节点。
+
+### 3.2 桌面布局
+
+桌面快捷方式按 `(node_id, app_id)` 保存。
+
+规则：
+
+1. 内置应用在不同节点上可以有不同的桌面位置和显隐状态。
+2. 套件应用的桌面记录只属于实例所在节点。
+3. 自动排序只更新当前节点的桌面布局。
+4. 用户删除某个节点上的套件快捷方式后，切换节点再返回不应自动恢复。
+5. 新应用目录项首次出现且没有桌面记录时，可以由前端补位并保存。
+
+## 4. 生命周期
+
+### 4.1 导入
+
+导入 `.slsp` 后，主控完成包解压、清单校验、资产校验和目录写入。
+
+导入不访问节点，不创建实例，不生成桌面入口。
+
+### 4.2 安装
+
+安装请求必须携带目标节点，未携带时默认为 `local`。
+
+流程：
+
+1. 主控解析目标节点运行时。
+2. 主控检查目标节点 Docker 状态。
+3. 主控创建安装任务和套件实例。
+4. Agent 在目标节点执行镜像准备、Compose 启动和健康检查。
+5. 主控写入实例应用入口。
+6. 前端按安装任务 ID 查询进度。
+
+安装任务状态包含 `nodeId`，前端只应在对应节点上下文展示该任务。
+
+### 4.3 启用与停用
+
+启用实例：
+
+1. 主控根据实例 `node_id` 访问目标 Agent。
+2. Agent 启动 Compose 项目。
+3. 主控恢复应用入口。
+4. 桌面快捷方式按节点恢复。
+
+停用实例：
+
+1. 主控根据实例 `node_id` 访问目标 Agent。
+2. Agent 停止 Compose 项目。
+3. 主控删除应用入口。
+4. 主控隐藏该节点下的套件桌面快捷方式，并记录停用前可见状态。
+
+### 4.4 卸载
+
+卸载实例只影响实例所属节点。
+
+流程：
+
+1. 主控请求目标 Agent 停止并卸载 Compose 项目。
+2. 主控删除该实例应用入口。
+3. 主控删除该节点下的套件桌面记录。
+4. 主控删除套件实例记录。
+
+目录删除与实例卸载分离。存在任何实例时，不允许删除套件目录。
+
+## 5. API 规范
+
+### 5.1 应用与桌面
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/apps?nodeId={node_id}` | 查询目标节点应用目录。 |
+| `GET` | `/api/v1/desktop/shortcuts?nodeId={node_id}` | 查询目标节点桌面快捷方式。 |
+| `PUT` | `/api/v1/desktop/shortcuts?nodeId={node_id}` | 保存目标节点桌面快捷方式。 |
+
+`nodeId` 省略时默认为 `local`。
+
+### 5.2 套件目录
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/suites/list?nodeId={node_id}` | 查询套件目录，并附带目标节点的实例状态。 |
+| `POST` | `/api/v1/suites/import` | 导入套件包。 |
+| `POST` | `/api/v1/suites/{suite_id}/install` | 在目标节点安装套件。 |
+| `DELETE` | `/api/v1/suites/{suite_id}` | 删除套件目录。 |
+| `GET` | `/api/v1/suites/{suite_id}/assets/{asset_path}` | 读取套件目录资产。 |
+
+安装请求体：
+
+```json
+{
+  "nodeId": "local"
+}
+```
+
+### 5.3 安装任务
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/suite-install-tasks/{task_id}` | 查询安装任务进度。 |
+| `POST` | `/api/v1/suite-install-tasks/{task_id}/cancel` | 取消安装任务。 |
+
+安装任务返回数据必须包含：
+
+| 字段 | 说明 |
+| --- | --- |
+| `taskId` | 安装任务 ID。 |
+| `instanceId` | 套件实例 ID。 |
+| `nodeId` | 目标节点 ID。 |
+| `progressPercent` | 进度百分比。 |
+| `status` | `queued`、`running`、`canceling`、`success`、`failed`、`canceled`。 |
+| `currentStep` | 当前阶段。 |
+| `currentImage` | 当前处理镜像，可为空。 |
+| `isFinished` | 任务是否结束。 |
+| `error` | 错误信息，可为空。 |
+| `cancelRequested` | 是否已请求取消。 |
+
+### 5.4 套件实例
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/v1/suite-instances/{instance_id}/enable` | 启用实例。 |
+| `POST` | `/api/v1/suite-instances/{instance_id}/disable` | 停用实例。 |
+| `POST` | `/api/v1/suite-instances/{instance_id}/uninstall` | 卸载实例。 |
+| `GET` | `/api/v1/suite-instances/{instance_id}/assets/{asset_path}` | 读取实例资产。 |
+| `ANY` | `/api/v1/suite-instances/{instance_id}/proxy/{entry_id}` | 代理入口请求。 |
+| `ANY` | `/api/v1/suite-instances/{instance_id}/proxy/{entry_id}/{path}` | 代理入口子路径请求。 |
+
+实例操作不接收 `nodeId` 参数。主控必须从实例记录解析目标节点。
+
+## 6. Agent 边界
+
+Agent 只管理本节点运行时能力：
+
+1. Docker 状态检查。
+2. Compose 安装、启动、停止、卸载。
+3. 安装进度采集。
+4. 套件 Web 入口代理目标解析。
+
+Agent 不维护全局套件目录，不决定套件是否出现在其他节点。
+
+## 7. 前端交互标准
+
+### 7.1 节点切换
+
+节点切换后必须刷新：
+
+1. 应用目录。
+2. 桌面快捷方式。
+3. 套件中心列表与当前节点实例状态。
+
+已打开的当前节点应用应遵守窗口守卫策略。存在未完成操作、脏状态或活跃会话时，前端应阻止节点切换或要求用户先关闭相关窗口。
+
+### 7.2 套件中心
+
+套件中心以当前节点展示安装状态。
+
+规则：
+
+1. 未安装：显示安装入口。
+2. 安装中：显示当前节点安装任务进度。
+3. 已启用：显示停用和卸载入口。
+4. 已停用：显示启用和卸载入口。
+5. 目标节点 Docker 不可用时，不允许发起安装。
+
+### 7.3 桌面
+
+桌面展示当前节点的快捷方式。
+
+规则：
+
+1. 当前节点不存在的套件入口不得展示。
+2. 当前节点用户隐藏过的快捷方式不得被自动恢复。
+3. 当前节点新出现的应用入口可以自动补位。
+4. 自动排序只对当前节点生效。
+
+## 8. 数据一致性
+
+实现必须满足以下约束：
+
+1. `suite_instances` 对 `(suite_id, node_id)` 建立唯一约束。
+2. `suite_app_entries` 必须保存 `node_id`。
+3. `desktop_apps` 必须以 `(node_id, app_id)` 作为主键。
+4. 应用目录查询必须按 `nodeId` 过滤套件入口。
+5. 桌面读写必须按 `nodeId` 过滤。
+6. 实例生命周期操作必须以实例记录中的 `node_id` 为准。
