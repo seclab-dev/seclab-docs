@@ -1,238 +1,161 @@
-# SecLab 协议仿真模块设计规范
+# SecLab 协议仿真套件设计规范
 
-本文档定义 SecLab 分布式协议仿真模块（SecSim）的系统架构、数据模型、Agent 运行机制、协议扩展规范和通信接口。
+本文档定义协议仿真从主控内置模块拆分为 Compose 套件后的当前实现。协议仿真的 UI、业务 API、规则库、实例状态、审计日志和 PCAP 文件由套件维护；主控只提供套件生命周期、入口代理、节点上下文和 SDK 能力。
 
----
+## 1. 运行边界
 
-## 1. 模块概述
+协议仿真由三个运行边界组成：
 
-### 1.1 设计目标
+| 边界 | 职责 |
+| --- | --- |
+| `seclab` 主控 | 导入、安装、启停、卸载套件；代理套件 Web 入口；同步主题、语言、通知和导航能力。 |
+| `protocol-simulation` 套件 API/UI | 管理规则、实例、审计日志、PCAP 文件；调用 Agent suite workload API。 |
+| `protocol-simulation-engine` workload | 运行具体协议仿真服务，接收规则配置并向套件 API 上报事件。 |
+| `seclab-agent` | 在目标节点创建、停止、删除 workload 容器；提供宿主机端口 PCAP 抓包能力。 |
 
-协议仿真（SecSim）在本地节点或远端节点上启动轻量级诱捕服务，模拟真实协议服务、应用指纹、漏洞响应和弱口令交互行为。系统记录攻击交互日志，并通过 Agent 原生 PCAP 取证能力保存网络报文证据。
+主控不再保留协议仿真专用前端、`/api/v1/simulation/*` 路由、`sim_*` 表和 Agent 内置协议运行器。协议仿真以 `seclab.protocol-simulation` 套件交付。
 
-### 1.2 核心业务边界与安全约束
+## 2. 镜像与仓库
 
-- **协议能力**：当前内置 HTTP、Redis、SMTP、POP3 与 IMAP 运行器。协议能力由主控能力表声明，Agent 运行器按协议独立实现。
-- **运行边界**：主控负责规则管理、实例编排、状态持久化和审计归档；Agent 负责端口监听、协议响应、交互日志上报和 PCAP 取证。
-- **安全边界**：PCAP 下载端点必须限制文件名和读取目录。Agent 与主控之间的运行时通信遵循本地 Unix Socket 或 HTTPS/mTLS 通道约束。
+协议仿真套件源码仓库为 `seclab-suite-protocol-simulation`，包含两个独立发布的镜像：
 
----
+| 镜像 | 来源 | 说明 |
+| --- | --- | --- |
+| `guowenju/seclab-protocol-simulation:<version>` | `crates/protocol-simulation` | 套件 API/UI 服务。 |
+| `guowenju/seclab-protocol-simulation-engine:<version>` | `crates/protocol-simulation-engine` | Agent 拉起的规则 workload 容器。 |
 
-## 2. 系统架构
+套件交付仓库 `seclab-suites` 保存 `suite.yaml`、`compose.yaml`、图标、README 和 CHANGELOG 快照。`suite.yaml.metadata.version` 是套件版本唯一来源；任一镜像 tag 变化时必须同步更新套件版本。
 
-SecSim 采用 **“控制台集中管控 + 边缘 Agent 独立监听”** 的分布式解耦架构。
+## 3. 数据模型
 
-```mermaid
-graph TD
-    A[SecLab 控制台 Web UI] -->|管理与下发部署| B[SecLab 主控制端服务]
-    B -->|mTLS / 本地 API| C[SecLab Agent 引擎]
-    C -->|同步端口预绑定与监听| D[协议运行器]
-    D --> H[HTTP 运行器]
-    D --> I[Redis 运行器]
-    D --> J[SMTP / POP3 / IMAP 运行器]
-    E[攻击者 / 流量探测器] -->|协议交互| D
-    D -->|生成审计日志| C
-    C -->|原生抓包多路复用| F[PCAP 取证]
-    C -->|日志与 PCAP 上报| B
+套件 API 使用套件私有 SQLite 数据库，数据位于套件数据卷内。
+
+| 表 | 说明 |
+| --- | --- |
+| `rules` | 协议仿真规则。导入规则包时写入包规则，界面创建时写入自定义规则。 |
+| `rule_packages` | 当前导入的规则包元数据。 |
+| `instances` | 已部署实例状态、workload ID、PCAP 状态和 PCAP 文件路径。 |
+| `audit_logs` | engine 上报的交互审计事件。 |
+
+实例下线等同销毁。套件 API 调用 Agent 停止 workload 后删除实例记录；停用或卸载套件时，Agent 会按 `suite_instance_id` 清理仍存活的 workload 容器，套件重新启用后会按 Agent workload 列表校准旧实例状态。
+
+## 4. 套件 API
+
+套件 Web 前端通过主控代理访问套件 API。套件内部 API 使用相对路径，不依赖主控仿真路由。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/health` | 健康检查。 |
+| `GET` | `/api/rules` | 查询规则。 |
+| `POST` | `/api/rules` | 创建自定义规则。 |
+| `DELETE` | `/api/rules/{id}` | 删除规则。 |
+| `GET` | `/api/rule-package/current` | 查询当前规则包。 |
+| `POST` | `/api/rule-package/import` | 导入 `.slrp` 规则包。 |
+| `GET` | `/api/instances` | 查询实例，并与 Agent workload 状态校准。 |
+| `POST` | `/api/instances/deploy` | 按规则和端口部署实例。 |
+| `POST` | `/api/instances/{id}/undeploy` | 下线实例并删除 workload 容器。 |
+| `POST` | `/api/instances/{id}/pcap/start` | 开启实例 PCAP 取证。 |
+| `POST` | `/api/instances/{id}/pcap/stop` | 停止取证并保存 PCAP。 |
+| `DELETE` | `/api/instances/{id}/pcap` | 删除已保存 PCAP 或停止进行中的取证。 |
+| `GET` | `/api/pcap/download/{file}` | 下载 PCAP 文件。 |
+| `GET` | `/api/logs` | 查询审计日志。 |
+| `POST` | `/internal/events` | engine workload 上报事件。 |
+
+## 5. Workload 编排
+
+套件 API 不挂载 Docker Socket，不直接操作 Docker。部署实例时，套件 API 调用 Agent suite workload API：
+
+```text
+POST   /api/v1/agent/suite-workloads/start
+POST   /api/v1/agent/suite-workloads/stop
+GET    /api/v1/agent/suite-workloads/list
+GET    /api/v1/agent/suite-workloads/{workload_id}
+DELETE /api/v1/agent/suite-workloads/{workload_id}
+POST   /api/v1/agent/suite-workloads/pcap/start
+POST   /api/v1/agent/suite-workloads/pcap/stop
 ```
 
-- **管理与调度**：用户通过控制台 UI 创建和整编仿真规则（Rules），选择目标节点和端口一键部署（Deploy）。控制端通过 mTLS 或本地信道向节点 Agent 发送启动指令。
-- **本地节点部署**：本地节点使用固定标识 `local`。主控将本地 Agent 纳入统一部署路径。
-- **独立运行器**：Agent 进程通过异步协程在指定端口启动协议运行器。运行器独立于 Agent API 请求生命周期。
-- **取证能力**：PCAP 由 Agent 原生抓包多路复用模块提供，按端口分发报文并在停止抓包后上报主控。
+启动请求包含 `suiteId`、`suiteInstanceId`、`workloadKind`、`workloadName`、镜像、端口映射、环境变量、规则配置和资源限制。协议仿真使用 `workloadKind=simulation-rule`，`workloadName` 使用规则 ID，容器名称形如：
 
----
-
-## 3. 数据表模型设计 (Schema)
-
-所有仿真配置、运行实例以及审计日志统一持久化于 `seclab.db` SQLite 数据库中。
-
-```mermaid
-erDiagram
-    sim_rules ||--o{ sim_instances : "被绑定"
-    sim_instances ||--o{ sim_logs : "产生"
+```text
+seclab-sim-rule-427001-f3dc45e75209
 ```
 
-### 3.1 仿真配置规则表 (`sim_rules`)
+Agent 创建 workload 时强制注入 labels：
 
-存储内置或用户自定义的协议仿真规则配置。
+```text
+seclab.workload_type=suite-workload
+seclab.suite_id=<suite_id>
+seclab.suite_instance_id=<suite_instance_id>
+seclab.workload_id=<workload_id>
+seclab.workload_kind=simulation-rule
+seclab.workload_name=<rule_id>
+```
 
-- `id` (INTEGER, PK): 规则唯一 ID。
-- `name` (TEXT): 规则中文名称。
-- `name_en` (TEXT): 规则英文名称.
-- `cve` (TEXT, Nullable): 关联的 CVE 编号。
-- `category` (TEXT): 漏洞分类（`'vuln_sim'`, `'honeypot'`）。
-- `description_zh` (TEXT): 中文描述信息。
-- `description_en` (TEXT): 英文描述信息。
-- `protocol` (TEXT): 仿真协议类型，例如 `http`、`redis`、`smtp`、`pop3`、`imap`。
-- `default_port` (INTEGER, Nullable): 默认监听端口。
-- `config_yaml` (TEXT): 协议运行器配置。不同协议使用独立 schema。
+停用和卸载套件前，Agent 按 `suite_instance_id` 停止 PCAP 任务并删除对应 workload 容器，避免孤儿容器。
 
-### 3.2 节点仿真运行实例表 (`sim_instances`)
+## 6. Agent 通信
 
-记录被成功分发并在节点上监听的活跃仿真实例。
+本地节点使用 Agent UDS；子节点使用 Agent HTTP/mTLS。套件 API 根据运行环境选择：
 
-- `instance_id` (TEXT, PK): 实例唯一 ID（UUID v7）。
-- `node_id` (TEXT): 部署的目标节点 ID（支持 `'local'` 及节点 UUID）。
-- `rule_id` (INTEGER, FK): 关联的仿真规则 ID，支持级联删除 (`ON DELETE CASCADE`)。
-- `listen_port` (INTEGER): 物理监听端口。
-- `status` (TEXT): 运行状态（`'active'`, `'inactive'`, `'error'`）。
-- `error_message` (TEXT, Nullable): 绑定失败等异常时的错误记录。
+| 场景 | 连接方式 |
+| --- | --- |
+| 本地节点 | UDS，URL 形态为 `http://local/...`。 |
+| 子节点 | Agent HTTPS/mTLS，证书目录由套件运行环境注入。 |
 
-本地节点使用 `local` 标识。节点与仿真实例的拓扑关系由业务层维护。
+套件只能使用为当前 `suite_instance_id` 下发的实例级凭据。规则 workload 容器不持有 Agent 凭据，也不接触 Docker Socket。
 
-### 3.3 协议仿真交互审计日志表 (`sim_logs`)
+## 7. 规则包
 
-归档攻击者与诱捕服务交互产生的审计日志。
+规则包后缀为 `.slrp`，载荷为 gzip tar。当前套件 API 要求包内包含：
 
-- `log_id` (INTEGER, PK AUTOINCREMENT): 自增日志 ID。
-- `instance_id` (TEXT): 关联的实例 ID（若物理实例失效，则回填对应的规则 ID 字符串以增强容错性）。
-- `node_id` (TEXT): 产生日志的节点 ID。
-- `client_ip` (TEXT): 攻击者 IP 地址。
-- `client_port` (INTEGER): 攻击者随机源端口。
-- `event_type` (TEXT): 日志事件类型，例如 `connection`、`http_request`、`redis_command`、`smtp_command`、`pop3_command`、`imap_command`、`auth_attempt`、`exploit_attempt`。
-- `detail_summary` (TEXT): 语义化的威胁审计总结。
-- `payload_hex` (TEXT, Nullable): 攻击请求 Header/Body 的 16 进制原始包备份。
-- `pcap_file_path` (TEXT, Nullable): 主控保存的 PCAP 文件相对路径。
+```text
+rules.bin
+rules.bin.sig
+```
 
-控制端根据 Agent 上报的 `node_id`、`rule_id` 和监听端口回填实例关联信息。
+`rules.bin` 使用 Protobuf 序列化，包含规则包 manifest 和规则列表。套件 API 当前解析 `rules.bin` 并校验包结构、规则数量、协议类型和规则配置 JSON；`rules.bin.sig` 作为包结构必需文件保留。
 
----
+导入后，规则 ID 转换为 `sim-rule-<id>`，规则英文名、分类、CVE、描述和协议行为写入 `config_json`，供前端详情、部署和浏览器预览使用。
 
-## 4. 边缘 Agent 核心运行机制
+## 8. 协议能力
 
-### 4.1 同步端口预绑定校验
+engine workload 当前支持：
 
-Agent 采用同步预绑定机制确认端口可用性：
+| 协议 | 默认端口 |
+| --- | --- |
+| HTTP | 80 |
+| Redis | 6379 |
+| SMTP | 25 |
+| POP3 | 110 |
+| IMAP | 143 |
+| SSH | 22 |
+| FTP | 21 |
+| RDP | 3389 |
 
-- 收到控制端 `/start` 部署指令后，API 路由处理器首先在**同步阻塞阶段**尝试对目标地址和端口执行 `tokio::net::TcpListener::bind`：
-  - **若端口被占用或权限不足**：在 API 阶段返回错误，控制端不写入运行实例。
-  - **若成功绑定**：将 `TcpListener` 传递给后台运行协程，避免检测与实际监听之间的竞态。
+新增协议时，应在 engine crate 中实现协议运行器，在套件 API 的协议校验中加入协议标识，并更新规则包生成与前端展示逻辑。
 
-### 4.2 Agent 模块结构
+## 9. PCAP 取证
 
-Agent 侧协议仿真运行器集中在 `crates/seclab-agent/src/services/simulation/`：
+PCAP 由 Agent 在宿主机侧抓取，不依赖 `tcpdump`。Agent 监听非 Docker bridge/veth 网卡，按宿主机端口将报文分发到对应抓包槽。
 
-| 文件             | 职责                           |
-| :--------------- | :----------------------------- |
-| `mod.rs`         | 声明子模块并导出运行器 API。   |
-| `common.rs`      | 审计日志上报和通用清理工具。   |
-| `http.rs`        | HTTP 协议运行器。              |
-| `redis.rs`       | Redis 协议运行器。             |
-| `smtp.rs`        | SMTP 协议运行器。              |
-| `pop3.rs`        | POP3 协议运行器。              |
-| `imap.rs`        | IMAP 协议运行器。              |
-| `mail_common.rs` | 邮件协议共享结构和行协议工具。 |
-| `pcap.rs`        | PCAP 抓包多路复用与上传。      |
+流程：
 
-### 4.3 HTTP 协议运行器
+1. 前端调用套件 API 开启取证。
+2. 套件 API 调 Agent `/pcap/start`，传入 `suiteInstanceId`、`workloadId` 和宿主机端口。
+3. Agent 返回 `captureId`，套件将实例 `pcap_status` 置为 `capturing`。
+4. 停止取证时，Agent 返回 base64 PCAP 字节。
+5. 套件 API 将 PCAP 写入自身数据卷，并把实例 `pcap_status` 置为 `ready`。
+6. PCAP 低于最小有效大小时，套件使用 SDK 通知主控展示空包提醒，并复位为 `idle`。
 
-在 Axum 的 `fallback` 路由处理器中部署通用拦截器 `simulation_handler`：
+抓包任务默认最长 5 分钟。停用或卸载套件时，Agent 会停止该套件实例下仍在运行的抓包任务。
 
-1. **静态 Banner 伪造**：重写 `Server` 标头（如 `Server: nginx/1.24.0 (Ubuntu)`），提供服务指纹响应。
-2. **常规请求响应**：未命中漏洞路径时，返回规则定义的默认 HTML 页面。
-3. **攻击路径匹配**：请求的 `path` 和 `method` 命中配置后，返回规则定义的 HTTP 状态码、响应体和响应头，并上报 `exploit_attempt` 日志。
+## 10. 套件前端
 
-### 4.4 Redis 协议运行器
+前端运行在套件 Web 入口内，通过主控代理加载。前端使用：
 
-Redis 运行器基于 TCP 监听处理 RESP 命令：
+- `@seclab-dev/vue` 和 SDL Token。
+- `@seclab-dev/suite-sdk` 同步主题、语言、通知和导航能力。
+- 主控 Web 浏览器应用承载规则 HTML 预览。
 
-1. **连接审计**：客户端建立连接后上报 `connection` 日志。
-2. **命令响应**：支持 `PING`、`AUTH`、`INFO`、`KEYS`、`GET`、`SET` 等基础命令响应。
-3. **诱捕语义**：高风险命令或自定义命令命中后上报 `exploit_attempt` 或规则定义的事件类型。
-4. **自定义响应**：规则可通过 `command_responses` 定义命令名、参数匹配、响应内容和事件类型。
-
-### 4.5 邮件协议运行器
-
-SMTP、POP3 与 IMAP 运行器基于明文 TCP 行协议实现：
-
-1. **SMTP**：支持 `EHLO/HELO`、`AUTH PLAIN/LOGIN`、`MAIL FROM`、`RCPT TO`、`DATA`、`RSET`、`VRFY`、`EXPN`、`NOOP`、`QUIT`。
-2. **POP3**：支持 `CAPA`、`USER`、`PASS`、`AUTH PLAIN`、`STAT`、`LIST`、`UIDL`、`RETR`、`TOP`、`DELE`、`RSET`、`NOOP`、`QUIT`。
-3. **IMAP**：支持 tagged command 流程，包括 `CAPABILITY`、`LOGIN`、`AUTHENTICATE PLAIN`、`LIST`、`STATUS`、`SELECT`、`SEARCH`、`FETCH`、`UID FETCH`、`STORE`、`LOGOUT`。
-4. **数据来源**：邮箱、邮件、能力声明、认证凭据和命令覆盖响应均来自规则 `config_yaml`。
-5. **安全边界**：邮件协议第一版不提供 TLS、STARTTLS、SMTPS、POP3S 或 IMAPS。
-
-### 4.6 PCAP 取证
-
-PCAP 取证由 Agent 原生抓包模块提供：
-
-1. 主控通过 Agent 仿真 API 启停指定端口的抓包槽。
-2. Agent 使用全局 Raw Socket 监听网络报文。
-3. 报文按 TCP 源端口或目的端口分发到对应抓包槽。
-4. 抓包停止后，Agent 将 PCAP 文件通过 `multipart/form-data` 上报主控。
-5. 临时 PCAP 文件由清理 Guard 自动删除。
-
-详细设计见 [SecLab交互式PCAP流量取证设计规范.md](SecLab交互式PCAP流量取证设计规范.md)。
-
-## 5. 协议扩展规范
-
-新增协议时，应按以下顺序扩展：
-
-1. **声明协议能力**
-
-   在 `crates/seclab/src/services/simulation_protocols.rs` 增加协议定义，声明协议标识、展示名称、默认端口、是否支持部署、是否支持自定义规则和支持的规则类型。
-
-2. **实现 Agent 运行器**
-
-   在 `crates/seclab-agent/src/services/simulation/` 新增 `{protocol}.rs`，定义协议配置结构、监听逻辑、响应逻辑和审计日志上报逻辑。
-
-3. **导出运行器**
-
-   在 `crates/seclab-agent/src/services/simulation/mod.rs` 声明子模块，并导出启动函数和配置类型。
-
-4. **接入启动分发**
-
-   在 `crates/seclab-agent/src/api/simulation.rs` 将协议标识映射到对应运行器。配置解析应在启动前完成，解析失败直接返回错误。
-
-5. **补充规则库 schema**
-
-   在 `crates/seclab-sim-rules/src/lib.rs` 增加协议 schema 审计模型、目录校验和样例规则校验。
-
-6. **补充规则内容**
-
-   在 `crates/seclab-sim-rules/rules/` 下按协议和分类新增规则目录与 YAML 文件。
-
-7. **更新前端配置入口**
-
-   当新协议需要自定义规则表单、详情解析或专属字段展示时，更新 `frontend/src/apps/views/SimulationView.vue` 和相关本地化文案。
-
-## 6. 通信接口与规范说明
-
-控制端和 Agent 的通信接口使用统一的驼峰命名法（`camelCase`）进行序列化与反序列化。
-
-### 6.1 规则 ID (Rule ID) 类型映射与系统边界契约
-
-规则 ID 按系统分层使用不同物理类型：
-
-控制端数据库使用 `i64`；网络交互、Agent 内存和上报载荷使用 `String`。
-
-| 系统分层位置                   | 采用的物理数据类型                 | 设计契约与规范依据                                                                                            |
-| :----------------------------- | :--------------------------------- | :------------------------------------------------------------------------------------------------------------ |
-| **控制端本地数据库物理列**     | **`i64` (INTEGER)**                | `sim_rules.id` 与 `sim_instances.rule_id` 以数字形式存储，享受主键及外键级联加速。                            |
-| **前端 Web & TypeScript 模型** | **`number`**                       | `SimRule.id` 与 `DeploySimReq.ruleId` 保持与控制端核心 API 的强类型匹配。                                     |
-| **API 部署分发载荷**           | **`i64` -> `String` 转换**         | 控制端向 Agent 发送部署指令时，动态调用 `rule_id.to_string()` 将数字转为字符串形式下发。                      |
-| **边缘 Agent 内存与端口映射**  | **`String`**                       | `rule_id` 在内存常驻句柄及 API 中均以 `String` 承接，支持未来非纯数字字符串 ID 临时规则。                     |
-| **威胁日志及 PCAP 上报载荷**   | **`String` (camelCase: `ruleId`)** | Agent 异步向主控 `POST /api/v1/simulation-public/log` 汇报审计及 Multipart 抓包文件时，统一以字符串形式传输。 |
-| **主控日志接收处理器**         | **`String`**                       | 控制端 `ReportSimLogRequest` 接口处使用 `String` 桥接，并在 `sim_logs.instance_id`（TEXT）字段落库。          |
-
----
-
-### 6.2 主要控制端 API 路由
-
-| 路由类型   | API 端点路径                                  | 说明                                                           |
-| :--------- | :-------------------------------------------- | :------------------------------------------------------------- |
-| **GET**    | `/api/v1/simulation/rules`                    | 列出所有内置及自定义的仿真诱捕规则。                           |
-| **POST**   | `/api/v1/simulation/rule`                     | 创建新的协议仿真自定义规则。                                   |
-| **DELETE** | `/api/v1/simulation/rule/{id}`                | 删除指定的仿真规则。                                           |
-| **POST**   | `/api/v1/simulation/deploy`                   | 向特定节点/本地节点部署并动态开启特定规则和端口的监听。        |
-| **POST**   | `/api/v1/simulation/undeploy`                 | 注销目标端口上的协议仿真服务。                                 |
-| **GET**    | `/api/v1/simulation/node/{node_id}/instances` | 获取特定节点上当前正在运行的所有活跃仿真实例列表。             |
-| **GET**    | `/api/v1/simulation/node/{node_id}/logs`      | 获取特定节点下当前最新的 100 条协议仿真威胁审计日志。          |
-| **GET**    | `/api/v1/simulation/pcap/download/{filename}` | 安全地下载关联攻击交互的 PCAP 数据包，支持物理路径防穿透校验。 |
-
-### 6.3 Agent 数据上报端点
-
-控制端提供 Agent 审计上报端点，用于接收仿真交互日志和 PCAP 文件。
-
-- **端点路由**：`POST /api/v1/simulation-public/log`，接收 `ReportSimLogRequest` 格式的日志载荷。
-- **端点路由**：`POST /api/v1/simulation-public/pcap`，以 `multipart/form-data` 格式接收 PCAP 文件。
+套件前端不显示节点选择。当前套件实例天然处于当前节点上下文。

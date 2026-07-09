@@ -8,11 +8,11 @@ SecLab 当前已经具备 Docker 与 Docker Compose 项目的基础管理能力�
 
 ## 2. 目标
 
-1. 用户可以在套件中心浏览、导入、安装、启用、停用、更新和卸载 Compose 套件。
+1. 用户可以在套件中心浏览、导入、安装、启用、停用和卸载 Compose 套件。
 2. 套件安装后可以向应用库注册入口，用户按现有应用流程点击使用或添加到桌面。
 3. 主控 `seclab` 只保存套件目录、安装意图、实例状态和应用入口元数据，不直接执行套件业务逻辑。
 4. Agent 负责在目标节点落地套件文件、执行 `docker compose`、采集运行状态和返回日志。
-5. 初期优先支持单节点套件，默认安装到 Local Node；分布式多节点编排后续再扩展。
+5. 套件按节点安装，同一套件可以分别安装到本地节点或外部节点。
 
 ## 3. 非目标
 
@@ -76,16 +76,17 @@ Docker / Docker Compose
 
 主控解析归档后，以 `{ path, contentBase64 }` 结构向 Agent 传递包内文件。文本和二进制资产统一使用 Base64，Agent 解码为原始字节后落盘，禁止将 PNG、WebP 等二进制文件按 UTF-8 字符串处理。
 
-套件开发仓库可以使用 `suites/<分类>/<suiteId>/<version>/` 组织交付文件，但导入套件中心的 `.slsp` 根目录应是目标版本交付目录内容：
+套件交付仓库使用 `suites/<suiteId>/` 组织交付文件。分类不体现在目录中，必须以 `suite.yaml` 的 `metadata.category` 为准；版本不体现在目录中，必须以 `suite.yaml` 的 `metadata.version` 和发布 tag 为准。导入套件中心的 `.slsp` 根目录应是目标套件目录内容：
 
 ```text
-0.1.0-alpha.1/
+suites/seclab.example-app/
 ├── suite.yaml
 ├── compose.yaml
 ├── .env.example
 ├── README.md
+├── CHANGELOG.md
 └── assets/
-    └── icon.png
+    └── suite-icon.png
 ```
 
 必需文件：
@@ -101,7 +102,7 @@ Docker / Docker Compose
 | 文件 | 用途 |
 | --- | --- |
 | `README.md` | 用户可读说明。 |
-| `assets/icon.png` | 套件中心和应用库默认图标；套件必须使用至少 128×128 的正方形 PNG，推荐 256×256 透明 PNG。 |
+| `assets/suite-icon.png` | 套件中心和应用库默认图标；套件必须使用至少 128×128 的正方形 PNG，推荐 256×256 透明 PNG。 |
 | `CHANGELOG.md` | 版本更新说明。 |
 
 ## 7. 生命周期
@@ -112,7 +113,7 @@ Docker / Docker Compose
 可安装 -> 已安装 -> 已启用 -> 已停用 -> 已卸载
               |          |
               v          v
-            更新中      异常
+             异常       异常
 ```
 
 状态定义：
@@ -126,13 +127,12 @@ Docker / Docker Compose
 | `enabled` | Compose 项目处于运行状态，应用入口可用。 |
 | `disabling` | 正在执行停止操作。 |
 | `disabled` | Compose 项目已停止，实例和数据仍保留。 |
-| `updating` | 正在拉取镜像、替换配置或重建容器。 |
 | `error` | 生命周期操作失败，需要用户查看日志或重试。 |
 | `uninstalled` | 实例记录和套件文件已删除；是否删除数据卷由卸载策略决定。 |
 
 安装、启用和停用语义必须分开：
 
-1. 安装：校验 `suite.yaml` 和 `compose.yaml`，写入目标节点套件目录，解析全部镜像；本地已有镜像直接复用，缺失镜像必须拉取成功后才创建套件实例记录。任一镜像不可用时安装失败并回滚文件和登记。
+1. 安装：校验 `suite.yaml` 和 `compose.yaml`，解析 Compose 镜像和可选的 `runtime.images`；本地已有镜像直接复用，缺失镜像必须拉取成功后才写入目标节点套件目录并启动 Compose。任一镜像不可用时安装失败并回滚文件和登记。
 2. 启用：执行 Compose 启动，健康检查通过后注册或激活应用入口。
 3. 停用：停止 Compose 项目，但保留配置、数据库记录和数据卷。
 4. 卸载：停止并删除 Compose 项目，删除套件文件和实例记录；数据卷默认保留，用户显式确认后才删除。
@@ -170,7 +170,7 @@ v1 优先支持 `proxied_web` 和 `compose_detail`。
 套件 Web 服务不应要求用户直接访问 Agent 地址。推荐由主控统一暴露代理入口：
 
 ```text
-/api/v1/suite-instance/{instance_id}/proxy/{entry_id}/...
+/api/v1/suite-instances/{instance_id}/proxy/{entry_id}/...
 ```
 
 代理流程：
@@ -261,7 +261,7 @@ networks:
 | `id` | 主键。 |
 | `suite_id` | 套件 ID。 |
 | `version` | 已安装版本。 |
-| `node_id` | 目标节点，Local Node 固定为 `local`。 |
+| `node_id` | 目标节点，本地节点固定为 `local`。 |
 | `compose_project_name` | Agent 上的 Compose 项目名。 |
 | `status` | 生命周期状态。 |
 | `enabled` | 是否启用。 |
@@ -291,15 +291,15 @@ Agent 侧通过 Compose 项目来源字段区分普通 Compose 项目和套件�
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| `GET` | `/api/v1/suites/list` | 获取套件目录与安装摘要。 |
+| `GET` | `/api/v1/suites/list?nodeId={node_id}` | 获取套件目录与目标节点安装摘要。 |
 | `POST` | `/api/v1/suites/import` | 导入本地套件包。 |
-| `GET` | `/api/v1/suite/{suite_id}/detail` | 查看套件详情。 |
-| `POST` | `/api/v1/suite/{suite_id}/install` | 安装套件到指定节点。 |
-| `POST` | `/api/v1/suite-instance/{instance_id}/enable` | 启用套件实例。 |
-| `POST` | `/api/v1/suite-instance/{instance_id}/disable` | 停用套件实例。 |
-| `POST` | `/api/v1/suite-instance/{instance_id}/update` | 更新套件实例。 |
-| `DELETE` | `/api/v1/suite-instance/{instance_id}` | 卸载套件实例。 |
-| `GET` | `/api/v1/suite-instance/{instance_id}/logs` | 查看套件聚合日志。 |
+| `POST` | `/api/v1/suites/{suite_id}/install` | 安装套件到指定节点。 |
+| `GET` | `/api/v1/suite-install-tasks/{task_id}/progress` | 查询安装进度。 |
+| `POST` | `/api/v1/suite-install-tasks/{task_id}/cancel` | 取消安装任务。 |
+| `POST` | `/api/v1/suite-instances/{instance_id}/enable` | 启用套件实例。 |
+| `POST` | `/api/v1/suite-instances/{instance_id}/disable` | 停用套件实例。 |
+| `POST` | `/api/v1/suite-instances/{instance_id}/uninstall` | 卸载套件实例。 |
+| `ANY` | `/api/v1/suite-instances/{instance_id}/proxy/{entry_id}/{path}` | 代理套件入口请求。 |
 
 主控到 Agent 的内部操作可以基于现有 Docker Compose API 扩展，建议保持语义清晰：
 
@@ -308,7 +308,6 @@ Agent 侧通过 Compose 项目来源字段区分普通 Compose 项目和套件�
 | `POST` | `/api/v1/agent/docker/compose/suites/install` | 写入套件 Compose 项目。 |
 | `POST` | `/api/v1/agent/docker/compose/suites/{project}/enable` | 执行 `up -d`。 |
 | `POST` | `/api/v1/agent/docker/compose/suites/{project}/disable` | 执行 `stop`。 |
-| `POST` | `/api/v1/agent/docker/compose/suites/{project}/update` | 拉取镜像并重建。 |
 | `DELETE` | `/api/v1/agent/docker/compose/suites/{project}` | 删除套件 Compose 项目。 |
 
 ## 13. 安全约束
@@ -334,7 +333,7 @@ Agent 侧通过 Compose 项目来源字段区分普通 Compose 项目和套件�
 2. Agent 执行 `docker compose -f - config` 校验 Compose 语法。
 3. 主控或 Agent 对 Compose AST 做安全策略检查。
 4. 安装前展示套件权限摘要，由用户确认高风险能力。
-5. 所有安装、启用、更新和卸载操作写入审计日志。
+5. 所有安装、启用、停用和卸载操作写入审计日志。
 
 ## 14. 文件与目录
 
@@ -368,11 +367,11 @@ Agent 侧 Compose 目录统一位于 `{SECLAB_HOME}/data/compose`：
 1. 定义 `suite.yaml` 最小 schema 和安全校验规则。
 2. 新增套件目录与套件实例表。
 3. 在套件中心实现本地导入、安装、启用、停用、卸载。
-4. 复用 Agent 现有 Compose 创建、启停、更新、删除和日志能力。
+4. 复用 Agent 现有 Compose 创建、启停、删除和日志能力。
 5. 应用库增加来源标记，按“内置应用”和“套件应用”分组。
 6. 支持 `compose_detail` 入口，先让无 UI 套件可见可管。
 7. 支持 `proxied_web` 入口，把套件 Web UI 接入现有窗口流程。
-8. 增加更新、版本比较、权限摘要和审计日志。
+8. 增加版本比较、权限摘要和审计日志。
 
 ## 16. 验收标准
 

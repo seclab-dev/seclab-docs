@@ -28,35 +28,32 @@ seclab-suites/
 │   ├── package.sh
 │   └── package-all.sh
 ├── suites/
-│   └── scanners/
-│       └── seclab.host-scanner/
-│           ├── README.md
-│           └── 0.1.0-alpha.1/
-│               ├── suite.yaml
-│               ├── compose.yaml
-│               ├── .env.example
-│               ├── README.md
-│               └── assets/
-│                   └── suite-icon.png
+│   └── seclab.host-scanner/
+│       ├── suite.yaml
+│       ├── compose.yaml
+│       ├── .env.example
+│       ├── README.md
+│       ├── CHANGELOG.md
+│       └── assets/
+│           └── suite-icon.png
 └── releases/
 ```
 
-分类建议：
+套件目录不再包含分类层级和版本层级。分类以 `suite.yaml` 的 `metadata.category` 为准，版本以 `suite.yaml` 的 `metadata.version` 和发布 tag 为准。
+
+分类只保留：
 
 | 分类 | 说明 |
 | --- | --- |
 | `tools` | 通用工具箱、编码转换、辅助实用工具。 |
-| `scanners` | 漏洞扫描、资产探测、安全检测工具。 |
-| `forensics` | 流量分析、文件取证、证据处理工具。 |
-| `protocol` | 协议仿真、协议实验、靶场服务。 |
-| `infra` | 数据库、缓存、消息队列等基础设施套件。 |
+| `other` | 暂未归类或不适合放入工具分类的套件。 |
 
 目录职责：
 
 | 目录 | 是否打包 | 说明 |
 | --- | --- | --- |
 | `seclab-suite-<slug>/` | 否 | 独立源码仓库，维护应用源码、Dockerfile、测试代码和镜像发布流程。 |
-| `suites/<分类>/<suiteId>/<version>/` | 是 | 套件中心导入的具体版本交付文件，打包脚本只应读取目标版本目录。 |
+| `suites/<suiteId>/` | 是 | 套件中心导入的交付文件，打包脚本读取该目录并以 `suite.yaml` 中的版本生成 `.slsp`。 |
 
 Web 套件推荐在源码仓库内拆分服务端与静态前端资源，不推荐把整页 HTML、CSS 和 JS 内联在后端源码中：
 
@@ -74,17 +71,17 @@ seclab-suite-<slug>/
 
 ## 3. 套件交付目录结构
 
-`<version>/` 目录是实际进入 `.slsp` 的交付内容。`.slsp` 是 `SecLab Suite Package` 的专用后缀，内部仍是 gzip 压缩的 tar 归档：
+`suites/<suiteId>/` 目录是实际进入 `.slsp` 的交付内容。`.slsp` 是 `SecLab Suite Package` 的专用后缀，内部仍是 gzip 压缩的 tar 归档：
 
 ```text
-0.1.0-alpha.1/
+suites/seclab.example-app/
 ├── suite.yaml
 ├── compose.yaml
 ├── .env.example
 ├── README.md
 ├── CHANGELOG.md
 └── assets/
-    └── icon.png
+    └── suite-icon.png
 ```
 
 交付文件要求：
@@ -96,7 +93,7 @@ seclab-suite-<slug>/
 | `.env.example` | 否 | 安装表单变量模板，不允许包含真实密钥；无变量时可省略或只写说明注释。 |
 | `README.md` | 推荐 | 说明用途、默认账号、端口、数据目录和升级注意事项。 |
 | `CHANGELOG.md` | 推荐 | 记录用户可理解的版本变化。 |
-| `assets/icon.png` | 是 | 套件中心和应用库展示图标，必须是至少 128×128 的正方形 PNG，推荐 256×256 透明 PNG。应用入口默认继承该图标。 |
+| `assets/suite-icon.png` | 是 | 套件中心和应用库展示图标，必须是至少 128×128 的正方形 PNG，推荐 256×256 透明 PNG。应用入口默认继承该图标。 |
 
 ## 4. 套件 ID 与版本
 
@@ -126,7 +123,7 @@ metadata:
   version: 0.1.0-alpha.1
   name: 示例套件
   summary: 用于演示 SecLab Compose 套件的最小结构。
-  icon: assets/icon.png
+  icon: assets/suite-icon.png
   minSeclabVersion: 0.1.0-alpha.1
   category: tools
 
@@ -134,6 +131,8 @@ runtime:
   type: compose
   composeFile: compose.yaml
   projectNameTemplate: seclab-{suiteId}-{instanceShortId}
+  images:
+    - nginx:1.27-alpine
   network:
     name: seclab-suite-network
     external: true
@@ -181,8 +180,8 @@ permissions:
 | `version` | 是 | 套件版本。 |
 | `name` | 是 | 展示名称。 |
 | `summary` | 是 | 一句话说明。 |
-| `icon` | 是 | 套件默认 logo，必须指向包内 `assets/` 下真实存在的 PNG、WebP 或 SVG；套件使用至少 128×128 的正方形 PNG。 |
-| `category` | 是 | 套件专属分类，推荐选项为 `scanners`（扫描检测）、`tools`（工具）、`forensics`（取证分析）、`protocol`（协议仿真）、`infra`（基础设施）。若缺省或值非法，将被归入 `other`（其它）。 |
+| `icon` | 是 | 套件默认 logo，必须指向包内 `assets/` 下真实存在的 PNG、WebP 或 SVG；推荐使用 `assets/suite-icon.png`。 |
+| `category` | 是 | 套件分类，只支持 `tools` 和 `other`；缺省或值非法时归入 `other`。 |
 | `minSeclabVersion` | 否 | 最低 SecLab 版本。 |
 | `homepage` | 否 | 项目主页。 |
 | `license` | 否 | 许可证。 |
@@ -194,6 +193,7 @@ permissions:
 | `type` | 是 | v1 固定为 `compose`。 |
 | `composeFile` | 是 | Compose 文件路径，通常是 `compose.yaml`。 |
 | `projectNameTemplate` | 否 | Compose project 名称模板；未提供时由平台生成。 |
+| `images` | 否 | 套件依赖的额外镜像列表；Compose 文件中的镜像会自动解析，只有运行时还需要其它 workload 镜像时才声明。 |
 
 ### 6.3 `config`
 
@@ -401,7 +401,7 @@ SecLab 维护套件与第三方套件分层：
 1. SecLab 维护的 Vue 套件统一使用 Vue 3 + Vite，并按需依赖 `@seclab-dev/tokens`、`@seclab-dev/icons` 和 `@seclab-dev/vue`。
 2. 套件不得从主控 `frontend/src/` 引用源码；共享 UI 能力只能通过 `seclab-ui` 发布包消费。
 3. 第三方套件不强制使用 Vue 或 SecLab UI 组件库，但必须遵守套件清单、Compose、安全权限、代理路径和基础视觉规则。
-4. `@seclab-dev/suite-sdk` 用于后续主题同步、基础路径和主控通信；能力未在其公开 API 中发布前不得依赖内部行为。
+4. `@seclab-dev/suite-sdk` 用于主题、语言、通知、导航和主控通信；能力未在其公开 API 中发布前不得依赖内部行为。
 5. 非 Vue 的 SecLab 示例套件至少应引入 `@seclab-dev/tokens` 的构建产物或使用与其同源的编译结果，不手工复制 Token。
 
 ## 11. 数据卷与目录
@@ -515,7 +515,7 @@ docker compose -p seclab-dev-example -f compose.yaml down -v
 
 ## 17. 交付包检查
 
-交付前 `<version>/` 目录应满足：
+交付前 `suites/<suiteId>/` 目录应满足：
 
 ```text
 0.1.0-alpha.1/

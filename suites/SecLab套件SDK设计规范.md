@@ -38,6 +38,7 @@ interface SuiteMessage<TPayload = unknown> {
 - `host:theme:update`
 - `host:locale:update`
 - `suite:notification:show`
+- `suite:navigation:open`
 - `suite:window:focus`
 
 蓝图占位消息：
@@ -46,7 +47,6 @@ interface SuiteMessage<TPayload = unknown> {
 - `host:permission:grant`
 - `host:permission:deny`
 - `suite:dialog:confirm`
-- `suite:navigation:open`
 - `suite:window:title:update`
 - `suite:window:dirty:update`
 - `suite:file:open`
@@ -188,7 +188,7 @@ type SuiteCapability =
   | "heartbeat";
 ```
 
-当前已用于套件 ready 消息，并已对 `theme`、`locale`、`notification` 提供 SDK 运行逻辑。
+当前已用于套件 ready 消息，并已对 `theme`、`locale`、`notification`、`navigation` 和 `window` 提供 SDK 运行逻辑。
 
 ### 5. 通知能力
 
@@ -260,14 +260,26 @@ const confirmed = await bridge.request("suite:dialog:confirm", {
 
 - `suite:navigation:open`
 
-蓝图目标：
+当前支持目标：
 
 - 打开内置应用。
 - 打开套件中心。
 - 返回桌面。
 - 打开外链，并由主控决定是否需要安全提示。
 
-当前只保留协议占位。
+套件端 API：
+
+```ts
+bridge.navigate({
+  type: "app",
+  appId: "builtin:web-browser",
+  params: {
+    url: "https://example.test",
+  },
+});
+```
+
+`navigate()` 返回 `true` 只表示消息已投递给主控。主控是否允许打开目标，由主控窗口、权限和应用注册状态决定。
 
 ### 8. 窗口聚焦、标题与脏状态
 
@@ -392,7 +404,7 @@ bridge.destroy();
 
 默认能力：
 
-- `capabilities: ['theme']`
+- `capabilities: ['theme', 'locale', 'notification', 'navigation', 'window']`
 - `target: document`
 - `targetOrigin: '*'`
 - `applyTheme: true`
@@ -443,6 +455,9 @@ window.matchMedia("(prefers-color-scheme: dark)");
 - 主控端 Bridge。
 - 主题同步。
 - 国际化同步。
+- 主控通知。
+- 主控导航。
+- iframe 窗口聚焦。
 - 独立运行主题降级。
 - 为后续 RPC 保留消息字段。
 
@@ -458,12 +473,10 @@ window.matchMedia("(prefers-color-scheme: dark)");
 近期实现：
 
 - 主控上下文。
-- 通知。
 - 确认对话框。
 
 中期实现：
 
-- 主控导航。
 - 窗口标题。
 - 未保存状态。
 - request/response RPC。
