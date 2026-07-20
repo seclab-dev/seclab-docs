@@ -155,7 +155,7 @@ PCAP 由 Agent 在宿主机侧抓取，不依赖 `tcpdump`。Agent 监听非 Doc
 前端运行在套件 Web 入口内，通过主控代理加载。前端使用：
 
 - `@seclab-dev/vue` 和 SDL Token。
-- `@seclab-dev/suite-sdk` 同步主题、语言、通知和导航能力。
-- 主控 Web 浏览器应用承载规则 HTML 预览。
+- `@seclab-dev/suite-sdk` 同步主题、语言和通知能力。
+- 套件内受限 iframe 承载规则 HTML 预览，不依赖主控内置应用。
 
 套件前端不显示节点选择。当前套件实例天然处于当前节点上下文。

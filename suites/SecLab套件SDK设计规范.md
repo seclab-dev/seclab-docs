@@ -271,11 +271,7 @@ const confirmed = await bridge.request("suite:dialog:confirm", {
 
 ```ts
 bridge.navigate({
-  type: "app",
-  appId: "builtin:web-browser",
-  params: {
-    url: "https://example.test",
-  },
+  target: "suite-center",
 });
 ```
 
