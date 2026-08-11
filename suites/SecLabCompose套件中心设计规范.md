@@ -132,7 +132,7 @@ suites/seclab.example-app/
 
 安装、启用和停用语义必须分开：
 
-1. 安装：校验 `suite.yaml` 和 `compose.yaml`，解析 Compose 镜像和可选的 `runtime.images`；本地已有镜像直接复用，缺失镜像必须拉取成功后才写入目标节点套件目录并启动 Compose。任一镜像不可用时安装失败并回滚文件和登记。
+1. 安装：使用导入时已经完成 `metadata.minSeclabVersion`、`suite.yaml` 和 `compose.yaml` 校验的目录快照；解析 Compose 镜像和可选的 `runtime.images`，本地已有镜像直接复用，缺失镜像必须拉取成功后才写入目标节点套件目录并启动 Compose。任一镜像准备失败时安装失败并回滚文件和登记。
 2. 启用：执行 Compose 启动，健康检查通过后注册或激活应用入口。
 3. 停用：停止 Compose 项目，但保留配置、数据库记录和数据卷。
 4. 卸载：停止并删除 Compose 项目，删除套件文件和实例记录；数据卷默认保留，用户显式确认后才删除。
@@ -335,6 +335,14 @@ Agent 侧通过 Compose 项目来源字段区分普通 Compose 项目和套件�
 4. 安装前展示套件权限摘要，由用户确认高风险能力。
 5. 所有安装、启用、停用和卸载操作写入审计日志。
 
+### 13.1 Suite Runtime 安全边界
+
+`runtime.agent.services` 是运行描述注入白名单，`runtime.agent.capabilities` 是 API 能力白名单，二者都必须在导入时校验。Agent 只向清单声明的服务注入实例级连接信息和令牌，并从令牌恢复 `suiteId`、`instanceId` 与节点身份。
+
+`runtime.images` 同时承担额外镜像预拉取清单和动态 workload 镜像白名单。Agent 创建 workload 时必须精确匹配该列表；Compose 文件中出现过某镜像不代表套件后端可以再次动态启动它。
+
+Suite Runtime 资源归属于套件实例。停用和卸载流程必须先结束该实例的活动 capture，再删除 workload，最后停止 Compose 项目，避免抓包槽、端口占用或业务容器遗留。
+
 ## 14. 文件与目录
 
 Agent 侧 Compose 目录统一位于 `{SECLAB_HOME}/data/compose`：
@@ -371,7 +379,7 @@ Agent 侧 Compose 目录统一位于 `{SECLAB_HOME}/data/compose`：
 5. 应用库增加来源标记，按“内置应用”和“套件应用”分组。
 6. 支持 `compose_detail` 入口，先让无 UI 套件可见可管。
 7. 支持 `proxied_web` 入口，把套件 Web UI 接入现有窗口流程。
-8. 增加版本比较、权限摘要和审计日志。
+8. 增加 `minSeclabVersion` 比较、Runtime 服务/能力/镜像授权摘要和审计日志。
 
 ## 16. 验收标准
 
@@ -382,3 +390,5 @@ Agent 侧 Compose 目录统一位于 `{SECLAB_HOME}/data/compose`：
 5. 停用后容器停止，应用库入口不可用或显示停用状态。
 6. 卸载后套件实例消失，普通 Docker Compose 项目不受影响。
 7. 高风险 Compose 配置会被阻断或要求明确确认。
+8. 不满足 `minSeclabVersion` 的套件包不能导入目录。
+9. Suite Runtime 只能操作所属实例的 workload 和 capture，未声明能力或镜像时请求被拒绝。

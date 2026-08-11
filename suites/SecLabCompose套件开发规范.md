@@ -120,6 +120,7 @@ apiVersion: seclab.io/v1alpha1
 kind: ComposeSuite
 metadata:
   suiteId: seclab.example-app
+  slug: example-app
   version: 0.1.0-alpha.1
   name: 示例套件
   summary: 用于演示 SecLab Compose 套件的最小结构。
@@ -131,8 +132,6 @@ runtime:
   type: compose
   composeFile: compose.yaml
   projectNameTemplate: seclab-{suiteId}-{instanceShortId}
-  images:
-    - nginx:1.27-alpine
   network:
     name: seclab-suite-network
     external: true
@@ -182,7 +181,8 @@ permissions:
 | `summary` | 是 | 一句话说明。 |
 | `icon` | 是 | 套件默认 logo，必须指向包内 `assets/` 下真实存在的 PNG、WebP 或 SVG；推荐使用 `assets/suite-icon.png`。 |
 | `category` | 是 | 套件分类，只支持 `tools` 和 `other`；缺省或值非法时归入 `other`。 |
-| `minSeclabVersion` | 否 | 最低 SecLab 版本。 |
+| `slug` | 是 | 稳定的小写短名称，用于生成 Compose 项目名。 |
+| `minSeclabVersion` | 是 | 最低 SecLab 平台版本；导入时必须通过 SemVer 格式和当前平台版本校验。 |
 | `homepage` | 否 | 项目主页。 |
 | `license` | 否 | 许可证。 |
 
@@ -193,9 +193,39 @@ permissions:
 | `type` | 是 | v1 固定为 `compose`。 |
 | `composeFile` | 是 | Compose 文件路径，通常是 `compose.yaml`。 |
 | `projectNameTemplate` | 否 | Compose project 名称模板；未提供时由平台生成。 |
-| `images` | 否 | 套件依赖的额外镜像列表；Compose 文件中的镜像会自动解析，只有运行时还需要其它 workload 镜像时才声明。 |
+| `images` | 否 | 套件依赖的额外 workload 镜像；安装时会预拉取，并作为 Agent 创建 workload 的镜像白名单。Compose 文件中的镜像会自动解析，但不会自动进入该白名单。 |
 
-### 6.3 `config`
+### 6.3 `runtime.agent`
+
+套件后端需要调用本节点 Agent 的受控能力时声明 `runtime.agent`：
+
+```yaml
+runtime:
+  images:
+    - vendor/example-worker:0.1.0-alpha.1
+  agent:
+    services:
+      - web
+    capabilities:
+      - workloads.manage
+      - captures.manage
+      - operation-logs.write
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `services` | 允许注入 Runtime 描述与凭据的 Compose service 名称，必须存在于 Compose 文件中。 |
+| `capabilities` | 授予这些服务的最小能力集合。 |
+
+当前支持的能力：
+
+- `workloads.manage`：创建、查询、停止和删除具名 TCP/UDP 多端点 workload。
+- `captures.manage`：对所属 workload 的全部已发布端点执行整 workload 抓包。
+- `operation-logs.write`：提交语义化平台操作事件。
+
+未使用 Agent Runtime 的套件不要声明 `runtime.agent`。需要时只授权实际调用 SDK 的服务，并把动态 workload 所需镜像逐项列入 `runtime.images`。
+
+### 6.4 `config`
 
 `config.variables` 用于生成安装表单和 `.env` 文件。
 
@@ -216,7 +246,7 @@ permissions:
 3. 必填变量必须提供说明。
 4. 默认值不得包含真实 token、密码、私钥或生产地址。
 
-### 6.4 `services`
+### 6.5 `services`
 
 `services` 描述 SecLab 需要理解的 Compose 服务，不要求列出所有内部服务，但对外提供 UI、API 或健康状态的服务必须声明。
 
@@ -226,7 +256,7 @@ permissions:
 | `role` | `web`、`api`、`worker`、`database` 或 `infra`。 |
 | `health` | 健康检查配置。 |
 
-### 6.5 `appEntries`
+### 6.6 `appEntries`
 
 套件需要出现在应用库时必须声明 `appEntries`。
 
@@ -249,7 +279,7 @@ permissions:
 | `path` | 默认路径。 |
 | `icon` | 可选图标路径；未填写时继承 `metadata.icon`。 |
 
-### 6.6 `permissions`
+### 6.7 `permissions`
 
 权限声明必须与 `compose.yaml` 实际内容一致。SecLab 会根据声明和 Compose 内容做双向校验。
 
@@ -279,6 +309,8 @@ permissions:
 11. 对外入口服务必须接入 `seclab-suite-network`。
 12. 单例且不需要多副本扩容的套件可以声明稳定的 `container_name`，名称应与平台生成的 Compose 项目名一致。
 13. 需要通过 Compose `--scale` 启动多个副本的服务不得声明 `container_name`。
+14. `runtime.agent.services` 只能列出实际需要 Agent Runtime 的服务，能力遵循最小授权原则。
+15. 动态 workload 使用的镜像必须固定版本并列入 `runtime.images`。
 
 推荐标签：
 
@@ -493,6 +525,8 @@ DATABASE_PASSWORD=
 9. 日志不会输出敏感值。
 10. `suite.yaml` 权限声明与 Compose 内容一致。
 11. 对外入口服务已接入 `seclab-suite-network`。
+12. `metadata.minSeclabVersion` 与使用的 Runtime 能力相匹配。
+13. `runtime.agent.services`、`runtime.agent.capabilities` 和 `runtime.images` 已按最小范围声明。
 
 ## 16. 本地验证流程
 
@@ -518,20 +552,19 @@ docker compose -p seclab-dev-example -f compose.yaml down -v
 交付前 `suites/<suiteId>/` 目录应满足：
 
 ```text
-0.1.0-alpha.1/
+suites/seclab.example-app/
 ├── suite.yaml
 ├── compose.yaml
 ├── .env.example
 ├── README.md
+├── CHANGELOG.md
 └── assets/
-    └── icon.png
+    └── suite-icon.png
 ```
 
-打包命令示例：
+打包方式：
 
-```bash
-tar -C suites/tools/seclab.example-app/0.1.0-alpha.1 -czf releases/seclab.example-app-0.1.0-alpha.1.slsp .
-```
+交付包应由 `seclab-suites` 的统一打包脚本从 `suites/<suiteId>/` 生成，不手工维护分类或版本目录。
 
 交付包命名规则：
 

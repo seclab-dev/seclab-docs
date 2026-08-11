@@ -2,6 +2,15 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Changed
+
+- 重写协议仿真 v1 设计文档，覆盖 14 种协议、具名 TCP/UDP 多端点、DNS 双传输和 engine 运行时事件。
+- 将规则库蓝图收敛为当前规则包规范，补齐 Protobuf v1、真实签名校验、`dist/` 交付目录和全链路兼容性契约。
+- 同步套件系统、Compose 开发与 Runtime SDK 文档，明确平台最低版本校验、服务/能力授权、workload 镜像白名单和整 workload 抓包。
+- 在 Agent OpenAPI 中登记 Suite Runtime workload 与 capture 接口及其实际请求、响应和安全边界。
+
 ## [0.1.0-alpha.1] - 2026-06-28
 
 ### Added

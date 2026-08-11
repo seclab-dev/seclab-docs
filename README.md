@@ -17,9 +17,18 @@ linked-docs -> ../seclab-docs
 | `architecture/` | 系统架构、Crate 边界、节点管理和计划任务设计。 |
 | `standards/` | 主题 Token、运行环境、部署目录、认证、日志和 WebSocket 规范。 |
 | `operations/` | 运行时协议、跨 NAT 回连和在线升级规范。 |
-| `simulation/` | 协议仿真、PCAP 取证、规则库升级和规则库契约。 |
+| `simulation/` | 协议仿真、PCAP 取证、规则包规范和跨仓库兼容性契约。 |
 | `suites/` | Compose 套件中心、套件开发规范和套件 SDK 设计规范。 |
 | `api/` | API 设计规范、契约、治理规则和可视化工作台。 |
+
+## 协议仿真文档
+
+- [SecLab 协议仿真模块设计规范](simulation/SecLab协议仿真模块设计规范.md)
+- [SecLab 协议仿真规则包设计规范](simulation/SecLab协议仿真规则包设计规范.md)
+- [SecLab 协议仿真套件与规则库兼容性契约](simulation/SecLab协议仿真套件与规则库兼容性契约.md)
+- [SecLab 协议仿真 PCAP 取证设计规范](simulation/SecLab交互式PCAP流量取证设计规范.md)
+
+协议仿真还依赖 [SecLab 套件系统实现规范](suites/SecLab套件系统实现规范.md)、[SecLab Compose 套件开发规范](suites/SecLabCompose套件开发规范.md) 和 [SecLab 套件 SDK 设计规范](suites/SecLab套件SDK设计规范.md) 中的 Suite Runtime 契约。
 
 ## API 工作台
 

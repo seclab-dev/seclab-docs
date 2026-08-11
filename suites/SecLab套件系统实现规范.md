@@ -4,7 +4,7 @@
 
 本文档定义 SecLab Compose 套件在主控、Agent、应用库和桌面中的运行模型、数据边界、API 形态和交互约束。
 
-本文档适用于 SecLab `0.1.0-alpha` 之后的套件系统实现。Alpha 阶段不保证旧数据库迁移兼容，数据库结构以当前初始 schema 为准。
+本文档以当前套件系统 schema 和运行模型为准。
 
 ## 2. 领域模型
 
@@ -91,7 +91,7 @@
 
 ### 4.1 导入
 
-导入 `.slsp` 后，主控完成包解压、清单校验、资产校验和目录写入。
+导入 `.slsp` 后，主控完成包解压、清单与资产校验，并确认当前平台版本满足 `metadata.minSeclabVersion` 后写入目录。
 
 导入不访问节点，不创建实例，不生成桌面入口。
 
@@ -101,14 +101,15 @@
 
 流程：
 
-1. 主控解析目标节点运行时。
+1. 主控解析目标节点运行时，并读取导入时已校验的套件清单。
 2. 主控检查目标节点 Docker 状态。
 3. 主控创建安装任务和套件实例。
 4. 主控解析 `compose.yaml` 与 `runtime.images`，得到套件运行需要的全部镜像。
-5. Agent 在目标节点复用已有镜像，并拉取缺失镜像。
-6. Agent 在目标节点写入套件文件、执行 Compose 启动和健康检查。
-7. 主控写入实例应用入口。
-8. 前端按安装任务 ID 查询进度。
+5. 主控把 `runtime.agent.services`、`runtime.agent.capabilities` 与 `runtime.images` 作为实例授权发送给 Agent。
+6. Agent 在目标节点复用已有镜像，并拉取缺失镜像。
+7. Agent 在目标节点写入套件文件、执行 Compose 启动和健康检查，并向获授权服务注入 Runtime 描述与凭据。
+8. 主控写入实例应用入口。
+9. 前端按安装任务 ID 查询进度。
 
 安装任务状态包含 `nodeId`，前端只应在对应节点上下文展示该任务。
 
@@ -215,12 +216,38 @@ Agent 只管理本节点运行时能力：
 2. Compose 安装、启动、停止、卸载。
 3. 安装进度采集。
 4. 套件 Web 入口代理目标解析。
-5. suite workload 容器创建、停止、查询和删除。
-6. suite workload 宿主机端口 PCAP 取证启动、停止和结果返回。
+5. Suite Runtime workload 容器创建、查询、停止和删除。
+6. 按 workload 全部已发布端点启动、停止 PCAP 取证并返回二进制结果。
+7. 校验 Runtime 能力、服务身份和镜像白名单，并应用请求的资源限制。
 
 Agent 不维护全局套件目录，不决定套件是否出现在其他节点。
 
 本地节点的主控到 Agent 通信使用 Unix domain socket。外部节点使用 HTTPS，并由节点证书完成身份校验。套件运行容器不直接调用主控，必须通过主控注入的 Agent 访问配置调用本节点 Agent。
+
+### 6.1 Suite Runtime 授权
+
+只有 `runtime.agent.services` 中声明的 Compose 服务才能获得运行描述。当前描述至少包含：
+
+| 字段 | 说明 |
+| --- | --- |
+| `schemaVersion` | 当前值为 `1`。 |
+| `platformVersion` | Agent 所属 SecLab 平台版本，供套件校验扩展资产的 `minSeclabVersion`。 |
+| `suiteId` / `instanceId` | 套件和安装实例的受信身份。 |
+| `endpoint` | UDS 或 mTLS HTTPS 连接信息。 |
+| `credential` | 当前实例的 Bearer token 及相关凭据。 |
+| `capabilities` | 该实例获准调用的能力集合。 |
+
+当前能力包括：
+
+| 能力 | 允许的行为 |
+| --- | --- |
+| `workloads.manage` | 管理该套件实例拥有的具名 TCP/UDP 多端点 workload。 |
+| `captures.manage` | 对该实例 workload 的全部已发布端点执行抓包。 |
+| `operation-logs.write` | 提交语义化平台操作事件。 |
+
+`runtime.images` 不写入 Runtime 描述。它由主控和 Agent 在安装时保存为实例级镜像白名单：既参与预拉取，也限制 workload 创建请求的 `image`。Compose 自身引用的镜像不会因此自动获得 workload 启动权限。
+
+Agent 必须从令牌恢复套件与实例身份，不接受请求体覆盖；workload ID、capture ID 和操作事件均按实例隔离。套件停用或卸载时必须终止活动 capture 并删除该实例创建的 workload。
 
 ## 7. 前端交互标准
 

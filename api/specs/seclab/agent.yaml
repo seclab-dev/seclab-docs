@@ -9,6 +9,7 @@ tags:
   - name: Docker 查询
   - name: Docker 操作
   - name: Docker 日志
+  - name: 套件运行时
   - name: WebSocket
 paths:
   /docker/info:
@@ -111,6 +112,112 @@ paths:
       responses:
         '200': { description: 返回 Docker 模块日志分页数据, content: { application/json: { schema: { $ref: '#/components/schemas/ApiResponse' } } } }
       x-seclab: { owner: seclab, layer: agent, lifecycle: active, implementationStatus: unverified, source: { repository: seclab, file: crates/seclab-agent/src/api/docker/mod.rs }, designDocs: [standards/SecLab平台日志设计规范.md], reviewedAt: null, notes: '' }
+  /suite-runtime/workloads:
+    post:
+      operationId: seclabAgentSuiteRuntimeWorkloadStart
+      tags: [套件运行时]
+      summary: 创建当前套件实例的受控 workload
+      description: 镜像必须在套件清单 runtime.images 白名单内，端点以 endpointId 和 TCP/UDP 传输区分。
+      security: [{ SuiteRuntimeBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartWorkloadRequest' }
+      responses:
+        '200': { description: Workload 已创建并启动, content: { application/json: { schema: { $ref: '#/components/schemas/StartWorkloadResponse' } } } }
+        '400': { description: 请求、镜像或端点不合法 }
+        '403': { description: Runtime 令牌无效或缺少 workloads.manage }
+        '409': { description: 宿主机端口不可用 }
+      x-seclab: &suiteWorkloadGovernance
+        owner: seclab
+        layer: agent
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab-agent/src/api/suite_workloads.rs }
+        designDocs: [suites/SecLab套件SDK设计规范.md, simulation/SecLab协议仿真模块设计规范.md]
+        reviewedAt: '2026-08-11'
+        notes: 套件和实例身份由 Runtime 令牌恢复。
+    get:
+      operationId: seclabAgentSuiteRuntimeWorkloadsList
+      tags: [套件运行时]
+      summary: 查询当前套件实例的 workload
+      security: [{ SuiteRuntimeBearer: [] }]
+      responses:
+        '200':
+          description: 只返回当前实例拥有的 workload
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/WorkloadSummary' } }
+        '403': { description: Runtime 令牌无效或缺少 workloads.manage }
+      x-seclab: *suiteWorkloadGovernance
+  /suite-runtime/workloads/{workload_id}:
+    get:
+      operationId: seclabAgentSuiteRuntimeWorkloadDetail
+      tags: [套件运行时]
+      summary: 获取当前套件实例的 workload 容器详情
+      security: [{ SuiteRuntimeBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WorkloadId'
+      responses:
+        '200': { description: 返回 Docker 容器检查结果, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '403': { description: Runtime 令牌无效或缺少 workloads.manage }
+        '404': { description: Workload 不存在或不属于当前实例 }
+      x-seclab: *suiteWorkloadGovernance
+    delete:
+      operationId: seclabAgentSuiteRuntimeWorkloadDelete
+      tags: [套件运行时]
+      summary: 删除当前套件实例的 workload
+      security: [{ SuiteRuntimeBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WorkloadId'
+      responses:
+        '200': { description: Workload 已删除, content: { application/json: { schema: { $ref: '#/components/schemas/DeleteWorkloadResponse' } } } }
+        '403': { description: Runtime 令牌无效或缺少 workloads.manage }
+        '404': { description: Workload 不存在或不属于当前实例 }
+      x-seclab: *suiteWorkloadGovernance
+  /suite-runtime/workloads/{workload_id}/captures:
+    post:
+      operationId: seclabAgentSuiteRuntimeCaptureStart
+      tags: [套件运行时]
+      summary: 对 workload 的全部已发布端点开始抓包
+      description: 请求不接收端口或请求体，捕获目标来自 Agent 保存的 workload 实际端点。
+      security: [{ SuiteRuntimeBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WorkloadId'
+      responses:
+        '200': { description: 抓包已开始, content: { application/json: { schema: { $ref: '#/components/schemas/StartCaptureResponse' } } } }
+        '400': { description: Workload 没有可抓取端点或抓包无法启动 }
+        '403': { description: Runtime 令牌无效或缺少 captures.manage }
+        '404': { description: Workload 不存在或不属于当前实例 }
+      x-seclab: &suiteCaptureGovernance
+        owner: seclab
+        layer: agent
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab-agent/src/api/suite_workloads.rs }
+        designDocs: [suites/SecLab套件SDK设计规范.md, simulation/SecLab交互式PCAP流量取证设计规范.md]
+        reviewedAt: '2026-08-11'
+        notes: 捕获槽按 transport 与 hostPort 区分，支持整 workload 多端点抓包。
+  /suite-runtime/workloads/{workload_id}/captures/{capture_id}/finish:
+    post:
+      operationId: seclabAgentSuiteRuntimeCaptureFinish
+      tags: [套件运行时]
+      summary: 停止抓包并返回 PCAP 二进制
+      security: [{ SuiteRuntimeBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WorkloadId'
+        - $ref: '#/components/parameters/CaptureId'
+      responses:
+        '200':
+          description: 抓包已停止
+          content:
+            application/vnd.tcpdump.pcap:
+              schema: { type: string, format: binary }
+        '400': { description: Capture 无法停止或所有权不匹配 }
+        '403': { description: Runtime 令牌无效或缺少 captures.manage }
+        '404': { description: Workload 不存在或不属于当前实例 }
+      x-seclab: *suiteCaptureGovernance
   /websocket/events/ws:
     get:
       operationId: seclabAgentWebsocketEvents
@@ -130,6 +237,23 @@ paths:
         reviewedAt: null
         notes: OpenAPI 只登记握手入口，消息协议仍需后续独立治理。
 components:
+  securitySchemes:
+    SuiteRuntimeBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: SecLab suite runtime token
+      description: Agent 注入并绑定到套件实例及能力集合的 Bearer token。
+  parameters:
+    WorkloadId:
+      name: workload_id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^workload-[A-Za-z0-9-]+$' }
+    CaptureId:
+      name: capture_id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^pcap-[A-Za-z0-9-]+$' }
   schemas:
     ApiResponse:
       type: object
@@ -156,3 +280,76 @@ components:
         pageSize: { type: integer, minimum: 1 }
         modules: { type: array, items: { type: string } }
         statuses: { type: array, items: { type: string } }
+    WorkloadTransport:
+      type: string
+      enum: [tcp, udp]
+    WorkloadPort:
+      type: object
+      additionalProperties: false
+      required: [endpointId, hostPort, containerPort, protocol]
+      properties:
+        endpointId: { type: string, minLength: 1 }
+        hostPort: { type: integer, minimum: 1, maximum: 65535 }
+        containerPort: { type: integer, minimum: 1, maximum: 65535 }
+        protocol: { $ref: '#/components/schemas/WorkloadTransport' }
+    WorkloadResources:
+      type: object
+      additionalProperties: false
+      properties:
+        memoryMb: { type: [integer, 'null'], minimum: 0 }
+        cpuShares: { type: [integer, 'null'], minimum: 0 }
+    StartWorkloadRequest:
+      type: object
+      additionalProperties: false
+      required: [workloadKind, workloadName, image]
+      properties:
+        workloadKind: { type: string, minLength: 1 }
+        workloadName: { type: string, minLength: 1 }
+        image: { type: string, minLength: 1 }
+        ports: { type: array, items: { $ref: '#/components/schemas/WorkloadPort' }, default: [] }
+        env: { type: object, additionalProperties: true, default: {} }
+        configJson: {}
+        resources: { $ref: '#/components/schemas/WorkloadResources' }
+    StartWorkloadResponse:
+      type: object
+      additionalProperties: false
+      required: [workloadId, containerId, status]
+      properties:
+        workloadId: { type: string }
+        containerId: { type: string }
+        status: { type: string }
+    WorkloadSummary:
+      type: object
+      additionalProperties: false
+      required: [workloadId, suiteId, suiteInstanceId, workloadKind, name, image, status, containerId]
+      properties:
+        workloadId: { type: string }
+        suiteId: { type: string }
+        suiteInstanceId: { type: string }
+        workloadKind: { type: string }
+        name: { type: string }
+        image: { type: string }
+        status: { type: string }
+        containerId: { type: string }
+    DeleteWorkloadResponse:
+      type: object
+      additionalProperties: false
+      required: [deleted]
+      properties:
+        deleted: { type: boolean, const: true }
+    CaptureEndpoint:
+      type: object
+      additionalProperties: false
+      required: [endpointId, hostPort, protocol]
+      properties:
+        endpointId: { type: string }
+        hostPort: { type: integer, minimum: 1, maximum: 65535 }
+        protocol: { $ref: '#/components/schemas/WorkloadTransport' }
+    StartCaptureResponse:
+      type: object
+      additionalProperties: false
+      required: [captureId, status, endpoints]
+      properties:
+        captureId: { type: string }
+        status: { type: string }
+        endpoints: { type: array, minItems: 1, items: { $ref: '#/components/schemas/CaptureEndpoint' } }

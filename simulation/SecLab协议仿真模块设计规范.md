@@ -1,161 +1,166 @@
 # SecLab 协议仿真套件设计规范
 
-本文档定义协议仿真从主控内置模块拆分为 Compose 套件后的当前实现。协议仿真的 UI、业务 API、规则库、实例状态、审计日志和 PCAP 文件由套件维护；主控只提供套件生命周期、入口代理、节点上下文和 SDK 能力。
+本文档定义 `seclab.protocol-simulation` Compose 套件的当前实现。协议仿真的 UI、业务 API、规则、实例状态、审计事件和 PCAP 文件均由套件维护；SecLab 平台只提供套件生命周期、入口代理、Agent Runtime 能力和统一操作日志。
 
 ## 1. 运行边界
 
-协议仿真由三个运行边界组成：
-
 | 边界 | 职责 |
 | --- | --- |
-| `seclab` 主控 | 导入、安装、启停、卸载套件；代理套件 Web 入口；同步主题、语言、通知和导航能力。 |
-| `protocol-simulation` 套件 API/UI | 管理规则、实例、审计日志、PCAP 文件；调用 Agent suite workload API。 |
-| `protocol-simulation-engine` workload | 运行具体协议仿真服务，接收规则配置并向套件 API 上报事件。 |
-| `seclab-agent` | 在目标节点创建、停止、删除 workload 容器；提供宿主机端口 PCAP 抓包能力。 |
+| `seclab` | 导入、安装、启停和卸载套件；代理 Web 入口；向套件后端注入实例级 Agent Runtime。 |
+| `seclab-suites` | 保存 `suite.yaml`、Compose 交付文件、固定镜像引用和套件变更记录。 |
+| `protocol-simulation` API/UI | 管理规则、实例、审计日志与 PCAP；调用 Agent suite-runtime API。 |
+| `protocol-simulation-engine` | 在独立 workload 容器内运行具体协议仿真，并向套件 API 上报结构化事件。 |
+| `seclab-agent` | 创建和清理受控 workload、发布命名端点、执行整工作负载 PCAP 取证。 |
+| `seclab-sim-rules` | 维护 YAML 规则、审计规则内容并生成签名 `.slrp` 规则包。 |
 
-主控不再保留协议仿真专用前端、`/api/v1/simulation/*` 路由、`sim_*` 表和 Agent 内置协议运行器。协议仿真以 `seclab.protocol-simulation` 套件交付。
+主控不解析规则包，不保存仿真规则、交互审计或 PCAP，也不保留 `/api/v1/simulation/*`、`sim_*` 表或 Agent 内置协议运行器。
 
-## 2. 镜像与仓库
+## 2. 镜像与交付
 
-协议仿真套件源码仓库为 `seclab-suite-protocol-simulation`，包含两个独立发布的镜像：
-
-| 镜像 | 来源 | 说明 |
+| 镜像 | 源码 | 用途 |
 | --- | --- | --- |
-| `guowenju/seclab-protocol-simulation:<version>` | `crates/protocol-simulation` | 套件 API/UI 服务。 |
-| `guowenju/seclab-protocol-simulation-engine:<version>` | `crates/protocol-simulation-engine` | Agent 拉起的规则 workload 容器。 |
+| `guowenju/seclab-protocol-simulation:<version>` | `crates/protocol-simulation` | 套件 API 与前端静态资源。 |
+| `guowenju/seclab-protocol-simulation-engine:<version>` | `crates/protocol-simulation-engine` | Agent 按规则创建的 workload。 |
 
-套件交付仓库 `seclab-suites` 保存 `suite.yaml`、`compose.yaml`、图标、README 和 CHANGELOG 快照。`suite.yaml.metadata.version` 是套件版本唯一来源；任一镜像 tag 变化时必须同步更新套件版本。
+engine 镜像不是 Compose 常驻服务，必须列入 `suite.yaml.runtime.images`。Agent 只允许套件启动清单声明的额外镜像。套件版本、两个镜像版本和规则包版本相互独立。
 
-## 3. 数据模型
+## 3. v1 协议能力目录
 
-套件 API 使用套件私有 SQLite 数据库，数据位于套件数据卷内。
+API 与 engine 通过 common crate 共享 `ProtocolId`、行为配置、端点描述、启动配置和运行时事件。`GET /api/capabilities` 返回 `schemaVersion: 1`、协议描述及以下特性：
+
+- `multiEndpoint`
+- `wholeWorkloadCapture`
+- `guidedRuleEditor`
+- `advancedJsonEditor`
+
+当前能力目录包含 14 种协议：
+
+| 协议 | 容器端点 | 主要行为配置 |
+| --- | --- | --- |
+| HTTP | `main` · 80/TCP | Server Header、响应头、HTML、触发路由。 |
+| Redis | `main` · 6379/TCP | Banner、认证、键值与命令响应。 |
+| SMTP | `main` · 25/TCP | Banner、主机名、凭据、收件人与命令响应。 |
+| POP3 | `main` · 110/TCP | Banner、凭据、消息与命令响应。 |
+| IMAP | `main` · 143/TCP | Banner、凭据、邮箱、消息与命令响应。 |
+| SSH | `main` · 22/TCP | Banner 与凭据。 |
+| FTP | `main` · 21/TCP | Banner、服务器名、匿名登录与凭据。 |
+| RDP | `main` · 3389/TCP | 协商 flags 与凭据。 |
+| Telnet | `main` · 23/TCP | Banner、提示符、凭据与命令响应。 |
+| MySQL | `main` · 3306/TCP | 服务版本、凭据、数据库与查询响应。 |
+| PostgreSQL | `main` · 5432/TCP | 服务版本、凭据、数据库与查询响应。 |
+| SMB | `main` · 445/TCP | 服务器名、域与共享列表。 |
+| LDAP | `main` · 389/TCP | Base DN、凭据与目录条目。 |
+| DNS | `dns-tcp` · 53/TCP；`dns-udp` · 53/UDP | A 记录、默认 IPv4 与 TTL。 |
+
+DNS 是当前真实多端点规则。部署 UI 只要求用户输入一个主机端口，默认值为 `1053`；套件 API 在内部生成 `dns-tcp` 和 `dns-udp` 两条相同主机端口的绑定。TCP 与 UDP 可以合法共用同一数值端口。
+
+## 4. 数据模型
+
+套件私有 SQLite 位于套件数据卷，主要表如下：
 
 | 表 | 说明 |
 | --- | --- |
-| `rules` | 协议仿真规则。导入规则包时写入包规则，界面创建时写入自定义规则。 |
-| `rule_packages` | 当前导入的规则包元数据。 |
-| `instances` | 已部署实例状态、workload ID、PCAP 状态和 PCAP 文件路径。 |
-| `audit_logs` | engine 上报的交互审计事件。 |
+| `rules` | 导入规则和界面创建的自定义规则。 |
+| `rule_packages` | 当前规则包的 manifest 摘要。 |
+| `instances` | 实例、workload、状态和 PCAP 状态。 |
+| `instance_endpoints` | 实例的命名端点、transport、主机端口和容器端口。 |
+| `audit_logs` | engine 上报的结构化交互事件。 |
 
-实例下线等同销毁。套件 API 调用 Agent 停止 workload 后删除实例记录；停用或卸载套件时，Agent 会按 `suite_instance_id` 清理仍存活的 workload 容器，套件重新启用后会按 Agent workload 列表校准旧实例状态。
+端口占用以 `(transport, host_port)` 判断；活动状态为 `deploying` 或 `running` 的实例保留端口。TCP 与 UDP 的同数值端口不冲突。
 
-## 4. 套件 API
+审计事件按实例保存，`event_id` 幂等。默认每个实例保留最新 10,000 条，可通过 `SECLAB_SIM_AUDIT_MAX_PER_INSTANCE` 提高但不能降低基线。实例删除时级联删除端点与审计事件。
 
-套件 Web 前端通过主控代理访问套件 API。套件内部 API 使用相对路径，不依赖主控仿真路由。
+## 5. 套件 API
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/health` | 健康检查。 |
-| `GET` | `/api/rules` | 查询规则。 |
-| `POST` | `/api/rules` | 创建自定义规则。 |
-| `DELETE` | `/api/rules/{id}` | 删除规则。 |
+| `GET` | `/api/capabilities` | 查询 v1 协议与端点能力目录。 |
+| `GET/POST` | `/api/rules` | 查询或创建规则。 |
+| `DELETE` | `/api/rules/{id}` | 删除自定义规则。 |
 | `GET` | `/api/rule-package/current` | 查询当前规则包。 |
-| `POST` | `/api/rule-package/import` | 导入 `.slrp` 规则包。 |
-| `GET` | `/api/instances` | 查询实例，并与 Agent workload 状态校准。 |
-| `POST` | `/api/instances/deploy` | 按规则和端口部署实例。 |
-| `POST` | `/api/instances/{id}/undeploy` | 下线实例并删除 workload 容器。 |
-| `POST` | `/api/instances/{id}/pcap/start` | 开启实例 PCAP 取证。 |
-| `POST` | `/api/instances/{id}/pcap/stop` | 停止取证并保存 PCAP。 |
-| `DELETE` | `/api/instances/{id}/pcap` | 删除已保存 PCAP 或停止进行中的取证。 |
-| `GET` | `/api/pcap/download/{file}` | 下载 PCAP 文件。 |
-| `GET` | `/api/logs` | 查询审计日志。 |
-| `POST` | `/internal/events` | engine workload 上报事件。 |
+| `POST` | `/api/rule-package/import` | 导入并验签 `.slrp`。 |
+| `GET` | `/api/instances` | 查询实例并与 Agent workload 状态校准。 |
+| `POST` | `/api/instances/deploy` | 按规则与命名端点绑定部署实例。 |
+| `POST` | `/api/instances/{id}/undeploy` | 下线并删除 workload。 |
+| `POST` | `/api/instances/{id}/pcap/start` | 开启整实例 PCAP。 |
+| `POST` | `/api/instances/{id}/pcap/stop` | 停止并保存 PCAP。 |
+| `DELETE` | `/api/instances/{id}/pcap` | 删除 PCAP 或停止活动取证。 |
+| `POST` | `/api/instances/{id}/pcap/download` | 下载当前实例 PCAP。 |
+| `GET` | `/api/instances/{id}/audit-logs` | 分页查询实例审计。 |
+| `POST` | `/internal/events` | engine 上报结构化事件。 |
 
-## 5. Workload 编排
+部署请求使用内部端点绑定：
 
-套件 API 不挂载 Docker Socket，不直接操作 Docker。部署实例时，套件 API 调用 Agent suite workload API：
-
-```text
-POST   /api/v1/agent/suite-workloads/start
-POST   /api/v1/agent/suite-workloads/stop
-GET    /api/v1/agent/suite-workloads/list
-GET    /api/v1/agent/suite-workloads/{workload_id}
-DELETE /api/v1/agent/suite-workloads/{workload_id}
-POST   /api/v1/agent/suite-workloads/pcap/start
-POST   /api/v1/agent/suite-workloads/pcap/stop
+```json
+{
+  "ruleId": "sim-rule-507001",
+  "endpointBindings": [
+    { "endpointId": "dns-tcp", "hostPort": 1053 },
+    { "endpointId": "dns-udp", "hostPort": 1053 }
+  ]
+}
 ```
 
-启动请求包含 `suiteId`、`suiteInstanceId`、`workloadKind`、`workloadName`、镜像、端口映射、环境变量、规则配置和资源限制。协议仿真使用 `workloadKind=simulation-rule`，`workloadName` 使用规则 ID，容器名称形如：
+API 必须拒绝未知、重复、缺失的必需端点以及无效端口。前端可以把同一业务服务的多个 transport 合并为一个输入，但不能删减提交给 API 的端点集合。
+
+## 6. Workload 编排
+
+套件后端不挂载 Docker Socket。它读取 `/run/seclab-agent/runtime.json`，通过 Runtime SDK 使用 `workloads.manage` 和 `captures.manage`：
 
 ```text
-seclab-sim-rule-427001-f3dc45e75209
+POST   /api/v1/agent/suite-runtime/workloads
+GET    /api/v1/agent/suite-runtime/workloads
+GET    /api/v1/agent/suite-runtime/workloads/{workload_id}
+DELETE /api/v1/agent/suite-runtime/workloads/{workload_id}
+POST   /api/v1/agent/suite-runtime/workloads/{workload_id}/captures
+POST   /api/v1/agent/suite-runtime/workloads/{workload_id}/captures/{capture_id}/finish
 ```
 
-Agent 创建 workload 时强制注入 labels：
+每个 `WorkloadPort` 包含 `endpointId`、`hostPort`、`containerPort` 和 `protocol`。Agent 校验端点 ID、transport/port 唯一性、宿主机端口占用和镜像白名单，然后创建带所有端点发布规则的容器。
 
-```text
-seclab.workload_type=suite-workload
-seclab.suite_id=<suite_id>
-seclab.suite_instance_id=<suite_instance_id>
-seclab.workload_id=<workload_id>
-seclab.workload_kind=simulation-rule
-seclab.workload_name=<rule_id>
+Agent 为 workload 保存实例所有权和端点 labels。停用或卸载套件前，Agent 按 `suite_instance_id` 停止取证并删除孤立 workload。
+
+## 7. Engine 启动与事件
+
+Agent 将 `configJson` 注入 workload 的 `SECLAB_WORKLOAD_CONFIG_JSON`。当前启动配置的 `schemaVersion` 为 `1`：
+
+```json
+{
+  "schemaVersion": 1,
+  "protocol": "dns",
+  "ruleId": "sim-rule-507001",
+  "ruleName": "DNS 诱捕解析服务",
+  "instanceId": "sim-...",
+  "callbackUrl": "http://seclab-protocol-simulation:8080/internal/events",
+  "callbackToken": "...",
+  "endpoints": [
+    { "endpointId": "dns-tcp", "transport": "tcp", "hostPort": 1053, "containerPort": 53 },
+    { "endpointId": "dns-udp", "transport": "udp", "hostPort": 1053, "containerPort": 53 }
+  ],
+  "behavior": {}
+}
 ```
 
-停用和卸载套件前，Agent 按 `suite_instance_id` 停止 PCAP 任务并删除对应 workload 容器，避免孤儿容器。
+engine 按 transport 分别绑定 TCP listener 或 UDP socket。同一容器端口可同时绑定 TCP 与 UDP。非 DNS 协议当前只允许 TCP；DNS TCP 使用两字节长度前缀，UDP 使用原始 DNS 报文。
 
-## 6. Agent 通信
+运行时事件的 `schemaVersion` 为 `1`，包含 UUIDv7 `eventId`、`instanceId`、`endpointId`、事件类型、摘要、客户端地址、metadata、可选 payloadHex 和时间戳。套件 API 校验事件所属实例和端点后通过有界队列批量写入 SQLite。
 
-本地节点使用 Agent UDS；子节点使用 Agent HTTP/mTLS。套件 API 根据运行环境选择：
+## 8. 规则包与版本
 
-| 场景 | 连接方式 |
-| --- | --- |
-| 本地节点 | UDS，URL 形态为 `http://local/...`。 |
-| 子节点 | Agent HTTPS/mTLS，证书目录由套件运行环境注入。 |
+规则包的归档、Protobuf、签名和版本策略见 [SecLab 协议仿真规则包设计规范](./SecLab协议仿真规则包设计规范.md) 与 [协议仿真套件与规则库兼容性契约](./SecLab协议仿真套件与规则库兼容性契约.md)。
 
-套件只能使用为当前 `suite_instance_id` 下发的实例级凭据。规则 workload 容器不持有 Agent 凭据，也不接触 Docker Socket。
+## 9. PCAP 与操作日志
 
-## 7. 规则包
+PCAP 是工作负载级能力，一次抓包覆盖实例的全部公开端点。详细流程见 [SecLab 协议仿真 PCAP 取证设计规范](./SecLab交互式PCAP流量取证设计规范.md)。
 
-规则包后缀为 `.slrp`，载荷为 gzip tar。当前套件 API 要求包内包含：
+规则创建/删除/导入、实例部署/下线、抓包生命周期和 PCAP 下载属于语义操作，套件后端通过 `operation-logs.write` 写入平台操作日志。查询、进度、内部 engine 事件和高频交互审计不进入平台操作日志。
 
-```text
-rules.bin
-rules.bin.sig
-```
+## 10. 前端约束
 
-`rules.bin` 使用 Protobuf 序列化，包含规则包 manifest 和规则列表。套件 API 当前解析 `rules.bin` 并校验包结构、规则数量、协议类型和规则配置 JSON；`rules.bin.sig` 作为包结构必需文件保留。
-
-导入后，规则 ID 转换为 `sim-rule-<id>`，规则英文名、分类、CVE、描述和协议行为写入 `config_json`，供前端详情、部署和浏览器预览使用。
-
-## 8. 协议能力
-
-engine workload 当前支持：
-
-| 协议 | 默认端口 |
-| --- | --- |
-| HTTP | 80 |
-| Redis | 6379 |
-| SMTP | 25 |
-| POP3 | 110 |
-| IMAP | 143 |
-| SSH | 22 |
-| FTP | 21 |
-| RDP | 3389 |
-
-新增协议时，应在 engine crate 中实现协议运行器，在套件 API 的协议校验中加入协议标识，并更新规则包生成与前端展示逻辑。
-
-## 9. PCAP 取证
-
-PCAP 由 Agent 在宿主机侧抓取，不依赖 `tcpdump`。Agent 监听非 Docker bridge/veth 网卡，按宿主机端口将报文分发到对应抓包槽。
-
-流程：
-
-1. 前端调用套件 API 开启取证。
-2. 套件 API 调 Agent `/pcap/start`，传入 `suiteInstanceId`、`workloadId` 和宿主机端口。
-3. Agent 返回 `captureId`，套件将实例 `pcap_status` 置为 `capturing`。
-4. 停止取证时，Agent 返回 base64 PCAP 字节。
-5. 套件 API 将 PCAP 写入自身数据卷，并把实例 `pcap_status` 置为 `ready`。
-6. PCAP 低于最小有效大小时，套件使用 SDK 通知主控展示空包提醒，并复位为 `idle`。
-
-抓包任务默认最长 5 分钟。停用或卸载套件时，Agent 会停止该套件实例下仍在运行的抓包任务。
-
-## 10. 套件前端
-
-前端运行在套件 Web 入口内，通过主控代理加载。前端使用：
-
-- `@seclab-dev/vue` 和 SDL Token。
-- `@seclab-dev/suite-sdk` 同步主题、语言和通知能力。
-- 套件内受限 iframe 承载规则 HTML 预览，不依赖主控内置应用。
-
-套件前端不显示节点选择。当前套件实例天然处于当前节点上下文。
+- 前端通过 capability descriptors 渲染协议字段和规则详情，不得为非 HTTP 协议回退显示 HTTP Server Header 或 HTML。
+- DNS 规则编辑支持 A 记录、默认 IPv4 和 TTL；详情以结构化表格展示记录。
+- 部署弹窗保持单端口输入，DNS 内部展开为 TCP/UDP 同端口绑定。
+- 实例列表按主机端口聚合 transport，例如 `1053/TCP/UDP`，不展示内部端点 ID。
+- 审计从实例操作入口打开，只查询当前实例；实例下线后关联审计销毁。
+- HTML 预览使用套件内受限 iframe，不依赖主控内置浏览器应用。

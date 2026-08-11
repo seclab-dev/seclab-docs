@@ -9,6 +9,71 @@ SecLab 套件包含两类相互隔离的 SDK：
 
 浏览器 SDK 不得读取 `/run/seclab-agent/runtime.json`、实例令牌、客户端证书或私钥。后端 Runtime SDK 不参与 iframe 消息协议。
 
+## 后端 Runtime SDK
+
+### 运行描述与连接
+
+Agent 只向 `suite.yaml` 的 `runtime.agent.services` 中声明的服务注入 `SECLAB_AGENT_RUNTIME`。未设置时 SDK 默认读取 `/run/seclab-agent/runtime.json`。当前描述如下：
+
+```json
+{
+  "schemaVersion": 1,
+  "platformVersion": "0.1.0-alpha.4",
+  "suiteId": "seclab.protocol-simulation",
+  "instanceId": "019c...",
+  "endpoint": {
+    "kind": "unix",
+    "socketPath": "/run/seclab-agent/agent.sock",
+    "baseUrl": "http://localhost"
+  },
+  "credential": {
+    "tokenPath": "/run/seclab-agent/token"
+  },
+  "capabilities": ["workloads.manage", "captures.manage", "operation-logs.write"]
+}
+```
+
+外部节点可使用 `kind: https`，并提供 `baseUrl`、CA、客户端证书和私钥路径。Rust 与 Python SDK 都必须：
+
+1. 校验 `schemaVersion`、严格 SemVer 格式的 `platformVersion` 和实例身份。
+2. 在构造客户端时要求业务所需 capability，缺少时立即失败。
+3. 从 `tokenPath` 读取 Bearer token，不允许把 token 写入业务配置或日志。
+4. 根据描述选择 UDS 或 mTLS HTTPS，不让业务代码自行拼装 Agent 地址。
+
+`runtime.images` 是 Agent 保存的 workload 镜像白名单，不属于 Runtime 描述字段。规则包等扩展资产可使用 `platformVersion` 校验自身 `minSeclabVersion`，但不得据此扩大 Agent 授权。
+
+### Workload 契约
+
+Runtime SDK 的 Rust crate 与 Python package 暴露同构异步 API：
+
+| SDK 方法 | Agent 路径 | 所需能力 |
+| --- | --- | --- |
+| `start_workload` | `POST /api/v1/agent/suite-runtime/workloads` | `workloads.manage` |
+| `list_workloads` | `GET /api/v1/agent/suite-runtime/workloads` | `workloads.manage` |
+| `delete_workload` | `DELETE /api/v1/agent/suite-runtime/workloads/{workload_id}` | `workloads.manage` |
+| `start_capture` | `POST /api/v1/agent/suite-runtime/workloads/{workload_id}/captures` | `captures.manage` |
+| `finish_capture` | `POST /api/v1/agent/suite-runtime/workloads/{workload_id}/captures/{capture_id}/finish` | `captures.manage` |
+
+创建请求使用 `workloadKind`、`workloadName`、`image`、`ports`、`env`、`configJson` 和 `resources`。每个 `ports` 元素包含稳定的 `endpointId`、`hostPort`、`containerPort` 与 `protocol`；`protocol` 当前只允许 `tcp` 或 `udp`。端点身份不能从端口号推导，同一数字端口可以分别用于 TCP 和 UDP。
+
+SDK 只提交期望状态，Agent 负责校验镜像白名单、端口冲突、资源限制和实例归属。列表和删除只能看见或操作当前实例创建的 workload。
+
+### 整 workload 抓包
+
+`start_capture(workloadId)` 不接收端口参数。Agent 根据 workload 的实际已发布端点一次启动全部 TCP/UDP 捕获，并返回 `captureId`、状态和端点列表。`finish_capture(workloadId, captureId)` 返回原始 PCAP 字节：Rust 类型为 `Vec<u8>`，Python 类型为 `bytes`，不得使用 Base64 JSON 中转。
+
+具体状态和清理规则见 [SecLab 协议仿真 PCAP 取证设计规范](../simulation/SecLab交互式PCAP流量取证设计规范.md)。
+
+### 操作事件
+
+`submit_operation_event` 需要 `operation-logs.write`。事件使用 UUIDv7 `eventId` 保证幂等，事件码使用稳定的 lower snake case，并携带中英文名称、结果、影响级别和可脱敏详情。SDK 对传输失败和可重试服务端错误执行有限重试；认证、授权和参数错误立即返回。
+
+用户身份、客户端 IP、节点、套件和实例归属由 Agent 根据令牌及受信操作上下文恢复，套件输入不能覆盖。自主后台事件没有用户上下文时，才以套件实例作为操作者。
+
+### 跨语言一致性
+
+共享 `contracts/` 目录是 Rust 与 Python 的 wire contract 基准。公开 JSON 字段保持 `camelCase`，运行描述、workload、capture 和操作事件 fixture 必须在两种实现中通过同一组有效与无效样例。
+
 ## 定位
 
 `@seclab-dev/suite-sdk` 是 SecLab 主控与套件 Web 前端之间的标准通信层。
