@@ -37,6 +37,7 @@
 | `suite_id` | 关联的套件目录 ID。 |
 | `node_id` | 实例所属节点 ID；本地节点固定为 `local`。 |
 | `compose_project_name` | Agent 侧 Docker Compose project 名称。 |
+| `platform_contract_version` | 安装时从套件清单固化的平台运行契约版本。 |
 | `status` | `installing`、`enabled`、`disabled`、`uninstalling`、`error` 等生命周期状态。 |
 
 约束：
@@ -61,6 +62,19 @@
 | `entry_target` | 入口目标信息。 |
 
 应用目录按 `nodeId` 查询。内置应用始终返回，套件应用只返回目标节点下已启用实例的入口。
+
+### 2.4 平台运行契约
+
+`suite.yaml.compatibility.platformContractVersion` 是套件与 SecLab 平台运行边界的整数契约标识。当前平台支持版本集合来自 `release-compatibility.json`，当前包含 `1`。
+
+主控必须满足以下约束：
+
+1. 清单缺少 `compatibility` 或 `platformContractVersion` 时拒绝导入。
+2. 值必须是正整数，并且属于当前平台支持的契约版本集合。
+3. 安装时将目录清单中的值写入 `suite_instances.platform_contract_version`，后续检查使用实例快照，不从目录当前值反推。
+4. 平台升级兼容性检查将实例契约版本与目标 SecLab Release 声明的支持集合逐一比较。
+
+该字段不进入 Agent Runtime 描述，也不替代 `metadata.minSeclabVersion`。
 
 ## 3. 节点作用域
 
@@ -91,7 +105,7 @@
 
 ### 4.1 导入
 
-导入 `.slsp` 后，主控完成包解压、清单与资产校验，并确认当前平台版本满足 `metadata.minSeclabVersion` 后写入目录。
+导入 `.slsp` 后，主控完成包解压、清单与资产校验，确认当前平台版本满足 `metadata.minSeclabVersion`，并校验 `compatibility.platformContractVersion` 受当前平台支持后写入目录。
 
 导入不访问节点，不创建实例，不生成桌面入口。
 
@@ -103,7 +117,7 @@
 
 1. 主控解析目标节点运行时，并读取导入时已校验的套件清单。
 2. 主控检查目标节点 Docker 状态。
-3. 主控创建安装任务和套件实例。
+3. 主控创建安装任务和套件实例，并固化平台运行契约版本。
 4. 主控解析 `compose.yaml` 与 `runtime.images`，得到套件运行需要的全部镜像。
 5. 主控把 `runtime.agent.services`、`runtime.agent.capabilities` 与 `runtime.images` 作为实例授权发送给 Agent。
 6. Agent 在目标节点复用已有镜像，并拉取缺失镜像。
@@ -208,6 +222,14 @@
 
 实例操作不接收 `nodeId` 参数。主控必须从实例记录解析目标节点。
 
+### 5.5 平台升级兼容性检查
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/v1/upgrades/release/{version}/compatibility/check` | 比较目标 SecLab Release 支持的契约版本与已安装套件实例。 |
+
+请求可以使用 `nodeIds` 限定节点范围。响应包含目标版本支持的契约版本集合、总体兼容状态、兼容/不兼容数量，以及每个实例的 `platformContractVersion`、状态和原因。
+
 ## 6. Agent 边界
 
 Agent 只管理本节点运行时能力：
@@ -294,3 +316,4 @@ Agent 必须从令牌恢复套件与实例身份，不接受请求体覆盖；wo
 4. 应用目录查询必须按 `nodeId` 过滤套件入口。
 5. 桌面读写必须按 `nodeId` 过滤。
 6. 实例生命周期操作必须以实例记录中的 `node_id` 为准。
+7. 套件实例必须保存安装时的 `platform_contract_version`，升级检查不得使用可变目录清单覆盖实例快照。

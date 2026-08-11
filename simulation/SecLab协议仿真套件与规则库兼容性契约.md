@@ -51,6 +51,8 @@ common crate 统一定义协议枚举、行为配置和字段描述。规则库�
 
 套件自身的 `suite.yaml.metadata.minSeclabVersion` 由主控在套件包导入时校验。两个最低版本声明用途不同，不能相互替代。
 
+`suite.yaml.compatibility.platformContractVersion` 表示协议仿真套件依赖的平台运行契约，当前值为 `1`。它由主控校验并固化到套件实例，供 SecLab 平台升级检查使用，不属于规则包 manifest、engine 启动配置或 Runtime 描述。
+
 规则包版本、套件版本、API/UI 镜像版本和 engine 镜像版本独立。规则包 manifest 当前没有 `min_suite_version`，因此依赖特定套件能力时还必须在规则库 CHANGELOG 中明确说明。
 
 ## 6. 规则 ID 与替换

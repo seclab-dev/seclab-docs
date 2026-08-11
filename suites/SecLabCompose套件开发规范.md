@@ -128,6 +128,9 @@ metadata:
   minSeclabVersion: 0.1.0-alpha.1
   category: tools
 
+compatibility:
+  platformContractVersion: 1
+
 runtime:
   type: compose
   composeFile: compose.yaml
@@ -186,7 +189,25 @@ permissions:
 | `homepage` | 否 | 项目主页。 |
 | `license` | 否 | 许可证。 |
 
-### 6.2 `runtime`
+### 6.2 `compatibility`
+
+`compatibility` 声明套件依赖的平台运行契约：
+
+| 字段 | 必需 | 说明 |
+| --- | --- | --- |
+| `platformContractVersion` | 是 | 正整数平台运行契约版本；当前值为 `1`。导入时必须属于当前 SecLab 支持的契约版本集合。 |
+
+平台运行契约描述 SecLab 与套件之间的安装、实例、代理、Runtime 注入和生命周期边界。它不等同于以下版本：
+
+| 字段 | 用途 |
+| --- | --- |
+| `metadata.version` | 套件自身的 SemVer 版本。 |
+| `metadata.minSeclabVersion` | 套件可运行的最低 SecLab 产品版本。 |
+| Runtime 描述 `schemaVersion` | 套件后端与 Agent Runtime SDK 的 JSON 结构版本。 |
+
+套件作者必须按当前平台契约填写该值，不能使用套件版本、镜像版本或 `apiVersion` 推导。
+
+### 6.3 `runtime`
 
 | 字段 | 必需 | 说明 |
 | --- | --- | --- |
@@ -195,7 +216,7 @@ permissions:
 | `projectNameTemplate` | 否 | Compose project 名称模板；未提供时由平台生成。 |
 | `images` | 否 | 套件依赖的额外 workload 镜像；安装时会预拉取，并作为 Agent 创建 workload 的镜像白名单。Compose 文件中的镜像会自动解析，但不会自动进入该白名单。 |
 
-### 6.3 `runtime.agent`
+### 6.4 `runtime.agent`
 
 套件后端需要调用本节点 Agent 的受控能力时声明 `runtime.agent`：
 
@@ -225,7 +246,7 @@ runtime:
 
 未使用 Agent Runtime 的套件不要声明 `runtime.agent`。需要时只授权实际调用 SDK 的服务，并把动态 workload 所需镜像逐项列入 `runtime.images`。
 
-### 6.4 `config`
+### 6.5 `config`
 
 `config.variables` 用于生成安装表单和 `.env` 文件。
 
@@ -246,7 +267,7 @@ runtime:
 3. 必填变量必须提供说明。
 4. 默认值不得包含真实 token、密码、私钥或生产地址。
 
-### 6.5 `services`
+### 6.6 `services`
 
 `services` 描述 SecLab 需要理解的 Compose 服务，不要求列出所有内部服务，但对外提供 UI、API 或健康状态的服务必须声明。
 
@@ -256,7 +277,7 @@ runtime:
 | `role` | `web`、`api`、`worker`、`database` 或 `infra`。 |
 | `health` | 健康检查配置。 |
 
-### 6.6 `appEntries`
+### 6.7 `appEntries`
 
 套件需要出现在应用库时必须声明 `appEntries`。
 
@@ -279,7 +300,7 @@ runtime:
 | `path` | 默认路径。 |
 | `icon` | 可选图标路径；未填写时继承 `metadata.icon`。 |
 
-### 6.7 `permissions`
+### 6.8 `permissions`
 
 权限声明必须与 `compose.yaml` 实际内容一致。SecLab 会根据声明和 Compose 内容做双向校验。
 
@@ -527,6 +548,7 @@ DATABASE_PASSWORD=
 11. 对外入口服务已接入 `seclab-suite-network`。
 12. `metadata.minSeclabVersion` 与使用的 Runtime 能力相匹配。
 13. `runtime.agent.services`、`runtime.agent.capabilities` 和 `runtime.images` 已按最小范围声明。
+14. `compatibility.platformContractVersion` 是当前平台支持的正整数契约版本。
 
 ## 16. 本地验证流程
 

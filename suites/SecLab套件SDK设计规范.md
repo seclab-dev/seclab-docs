@@ -42,6 +42,8 @@ Agent 只向 `suite.yaml` 的 `runtime.agent.services` 中声明的服务注入 
 
 `runtime.images` 是 Agent 保存的 workload 镜像白名单，不属于 Runtime 描述字段。规则包等扩展资产可使用 `platformVersion` 校验自身 `minSeclabVersion`，但不得据此扩大 Agent 授权。
 
+`suite.yaml.compatibility.platformContractVersion` 同样不写入 Runtime 描述。它由主控在套件导入、安装和平台升级兼容性检查中使用；Runtime SDK 不读取、推导或协商该字段。
+
 ### Workload 契约
 
 Runtime SDK 的 Rust crate 与 Python package 暴露同构异步 API：

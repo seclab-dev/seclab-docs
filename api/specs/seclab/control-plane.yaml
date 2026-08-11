@@ -1107,6 +1107,43 @@ paths:
         designDocs: []
         reviewedAt: "2026-06-27"
         notes: ''
+  /upgrades/release/{version}/compatibility/check:
+    post:
+      operationId: seclabUpgradesReleaseSuiteCompatibilityCheck
+      tags: [在线升级]
+      summary: 检查目标版本与已安装套件的平台运行契约兼容性
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuiteCompatibilityCheckRequest' }
+      responses:
+        '200':
+          description: 返回套件兼容性汇总和实例明细
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SuiteCompatibilityReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+      x-seclab:
+        owner: seclab
+        layer: control-plane
+        lifecycle: active
+        implementationStatus: verified
+        source: { repository: seclab, file: crates/seclab/src/api/upgrades.rs }
+        designDocs: [operations/SecLab在线升级设计规范.md, suites/SecLab套件系统实现规范.md]
+        reviewedAt: "2026-08-11"
+        notes: 使用套件实例安装时固化的平台运行契约版本执行只读检查。
   /upgrades/plan/create:
     post:
       operationId: seclabUpgradesPlanCreate
@@ -2021,6 +2058,48 @@ components:
         isFinished: { type: boolean }
         error: { type: [string, 'null'] }
         cancelRequested: { type: boolean }
+    SuiteCompatibilityCheckRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        nodeIds: { type: array, items: { type: string } }
+    SuiteCompatibilityInstance:
+      type: object
+      additionalProperties: false
+      required: [instanceId, suiteId, suiteName, nodeId, nodeName, platformContractVersion, status, reason]
+      properties:
+        instanceId: { type: string }
+        suiteId: { type: string }
+        suiteName: { type: string }
+        nodeId: { type: string }
+        nodeName: { type: string }
+        platformContractVersion: { type: integer, minimum: 1 }
+        status: { type: string, enum: [compatible, incompatible] }
+        reason: { type: string, enum: [supported, contractVersionNotSupported] }
+    SuiteCompatibilitySummary:
+      type: object
+      additionalProperties: false
+      required: [total, compatible, incompatible]
+      properties:
+        total: { type: integer, minimum: 0 }
+        compatible: { type: integer, minimum: 0 }
+        incompatible: { type: integer, minimum: 0 }
+    SuiteCompatibilityReport:
+      type: object
+      additionalProperties: false
+      required: [releaseVersion, supportedSuiteContractVersions, compatible, summary, instances]
+      properties:
+        releaseVersion: { type: string }
+        supportedSuiteContractVersions:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+        compatible: { type: boolean }
+        summary: { $ref: '#/components/schemas/SuiteCompatibilitySummary' }
+        instances:
+          type: array
+          items: { $ref: '#/components/schemas/SuiteCompatibilityInstance' }
     NodePrecheckRequest:
       type: object
       required: [addr, port, user, authMode, servicePort, installDir]

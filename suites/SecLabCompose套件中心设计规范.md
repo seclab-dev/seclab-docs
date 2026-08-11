@@ -74,6 +74,8 @@ Docker / Docker Compose
 
 `.slsp` 内部载荷采用 gzip 压缩的 tar 归档。这样既能保留品牌化后缀，也能继续使用标准工具进行开发期检查、自动化打包和故障排查。主控导入时必须校验文件后缀、归档可解析性、包内路径安全性和 `suite.yaml` 清单，不应只信任文件名。
 
+`suite.yaml` 必须通过 `compatibility.platformContractVersion` 声明正整数平台运行契约版本。主控只允许导入当前 SecLab 支持的契约版本；当前支持值为 `1`。
+
 主控解析归档后，以 `{ path, contentBase64 }` 结构向 Agent 传递包内文件。文本和二进制资产统一使用 Base64，Agent 解码为原始字节后落盘，禁止将 PNG、WebP 等二进制文件按 UTF-8 字符串处理。
 
 套件交付仓库使用 `suites/<suiteId>/` 组织交付文件。分类不体现在目录中，必须以 `suite.yaml` 的 `metadata.category` 为准；版本不体现在目录中，必须以 `suite.yaml` 的 `metadata.version` 和发布 tag 为准。导入套件中心的 `.slsp` 根目录应是目标套件目录内容：
@@ -132,7 +134,7 @@ suites/seclab.example-app/
 
 安装、启用和停用语义必须分开：
 
-1. 安装：使用导入时已经完成 `metadata.minSeclabVersion`、`suite.yaml` 和 `compose.yaml` 校验的目录快照；解析 Compose 镜像和可选的 `runtime.images`，本地已有镜像直接复用，缺失镜像必须拉取成功后才写入目标节点套件目录并启动 Compose。任一镜像准备失败时安装失败并回滚文件和登记。
+1. 安装：使用导入时已经完成 `metadata.minSeclabVersion`、`compatibility.platformContractVersion`、`suite.yaml` 和 `compose.yaml` 校验的目录快照；将平台运行契约版本固化到实例，解析 Compose 镜像和可选的 `runtime.images`，本地已有镜像直接复用，缺失镜像必须拉取成功后才写入目标节点套件目录并启动 Compose。任一镜像准备失败时安装失败并回滚文件和登记。
 2. 启用：执行 Compose 启动，健康检查通过后注册或激活应用入口。
 3. 停用：停止 Compose 项目，但保留配置、数据库记录和数据卷。
 4. 卸载：停止并删除 Compose 项目，删除套件文件和实例记录；数据卷默认保留，用户显式确认后才删除。
@@ -261,6 +263,7 @@ networks:
 | `id` | 主键。 |
 | `suite_id` | 套件 ID。 |
 | `version` | 已安装版本。 |
+| `platform_contract_version` | 安装时固化的平台运行契约版本。 |
 | `node_id` | 目标节点，本地节点固定为 `local`。 |
 | `compose_project_name` | Agent 上的 Compose 项目名。 |
 | `status` | 生命周期状态。 |
@@ -329,7 +332,7 @@ Agent 侧通过 Compose 项目来源字段区分普通 Compose 项目和套件�
 
 校验流程：
 
-1. 主控解析 `suite.yaml`，检查套件 ID、版本、入口声明和权限声明。
+1. 主控解析 `suite.yaml`，检查套件 ID、版本、平台运行契约版本、入口声明和权限声明。
 2. Agent 执行 `docker compose -f - config` 校验 Compose 语法。
 3. 主控或 Agent 对 Compose AST 做安全策略检查。
 4. 安装前展示套件权限摘要，由用户确认高风险能力。
@@ -379,7 +382,7 @@ Agent 侧 Compose 目录统一位于 `{SECLAB_HOME}/data/compose`：
 5. 应用库增加来源标记，按“内置应用”和“套件应用”分组。
 6. 支持 `compose_detail` 入口，先让无 UI 套件可见可管。
 7. 支持 `proxied_web` 入口，把套件 Web UI 接入现有窗口流程。
-8. 增加 `minSeclabVersion` 比较、Runtime 服务/能力/镜像授权摘要和审计日志。
+8. 增加 `minSeclabVersion`、`platformContractVersion` 校验、Runtime 服务/能力/镜像授权摘要和审计日志。
 
 ## 16. 验收标准
 
@@ -392,3 +395,4 @@ Agent 侧 Compose 目录统一位于 `{SECLAB_HOME}/data/compose`：
 7. 高风险 Compose 配置会被阻断或要求明确确认。
 8. 不满足 `minSeclabVersion` 的套件包不能导入目录。
 9. Suite Runtime 只能操作所属实例的 workload 和 capture，未声明能力或镜像时请求被拒绝。
+10. 缺少平台运行契约版本、值不是正整数或当前平台不支持时，套件包不能导入。

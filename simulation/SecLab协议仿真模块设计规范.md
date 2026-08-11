@@ -24,6 +24,8 @@
 
 engine 镜像不是 Compose 常驻服务，必须列入 `suite.yaml.runtime.images`。Agent 只允许套件启动清单声明的额外镜像。套件版本、两个镜像版本和规则包版本相互独立。
 
+协议仿真套件清单通过 `compatibility.platformContractVersion: 1` 声明所需平台运行契约。主控在导入时校验该值，并在安装时将其固化到套件实例，供 SecLab 升级兼容性检查使用。
+
 ## 3. v1 协议能力目录
 
 API 与 engine 通过 common crate 共享 `ProtocolId`、行为配置、端点描述、启动配置和运行时事件。`GET /api/capabilities` 返回 `schemaVersion: 1`、协议描述及以下特性：

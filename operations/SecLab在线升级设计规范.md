@@ -13,6 +13,7 @@
 - controller 与 agent 按同一版本一起发布、一起上传、一起升级；用户入口统一采用集群升级模式。
 - 支持主控升级时继续保留升级计划状态，服务重启后可继续收敛。
 - 支持在线节点立即升级，离线节点上线后自动补齐升级。
+- 支持在升级前比较目标 Release 与已安装套件的平台运行契约版本。
 - 所有升级计划、目标和事件必须持久化，便于审计与排障。
 
 ### 1.2 当前实现范围
@@ -23,6 +24,7 @@
 - 已实现 agent 从主控下载制品并执行本地替换、重启和回滚接口。
 - 已实现主控后台调度器推进 controller 与 agent 升级目标。
 - 已实现设置页在线升级入口、版本列表、计划目标和事件展示。
+- 已实现目标 Release 套件契约支持集合解析、已安装套件兼容性检查和结果展示。
 - 待实现管理员上传完整版本包、发布签名验签、上传制品校验入库和基于上传来源的集群升级计划创建。
 - 真实生产升级链路需要等正式 Release 或上传制品准备完成后进行端到端验收。
 
@@ -63,6 +65,7 @@ seclab-agent 节点
 - 主控是升级计划、目标状态和事件流水的唯一真相源。
 - GitHub Release 与上传完整版本包只是制品来源差异，升级计划、目标调度和 agent 下载协议必须保持一致。
 - 对外统一暴露集群升级语义；controller 与 agent target 是主控内部执行单元。
+- 套件兼容性检查使用实例安装时固化的 `platform_contract_version`，并与目标 Release 的 `supportedSuiteContractVersions` 比较。
 
 ---
 
@@ -117,6 +120,7 @@ seclab-agent 节点
 - `assets`：制品 JSON 摘要，GitHub 来源记录 Release assets，上传来源记录主控本地缓存制品；每个制品摘要必须包含 `component`、`targetTriple`、文件名、大小、SHA256 和签名状态。
 - `checksum_status`：checksum 元数据状态。
 - `signature_status`：发布签名校验状态，取值与 `checksum_status` 对齐，支持 `unknown`、`missing`、`verified`、`failed`。
+- `supported_suite_contract_versions`：目标 Release 支持的套件平台运行契约版本集合，以正整数 JSON 数组保存。
 - `synced_at`、`published_at`：同步和发布时间；上传来源的 `published_at` 可以为空。
 
 ### 4.2 `upgrade_plans`
@@ -164,6 +168,15 @@ seclab-agent 节点
 - token 绑定 `plan_id`、`target_id`、`version`、`component`、`target_triple`。
 - token 默认 30 分钟过期。
 
+### 4.6 套件实例契约快照
+
+`suite_instances.platform_contract_version` 保存套件安装时从 `suite.yaml.compatibility.platformContractVersion` 固化的值。兼容性检查按未卸载实例逐项读取该字段，并返回：
+
+- `compatible`：目标 Release 的支持集合包含该实例契约版本。
+- `incompatible`：目标 Release 不支持该实例契约版本，原因为 `contractVersionNotSupported`。
+
+可以通过 `nodeIds` 只检查指定节点。检查结果不修改套件实例、目录或升级计划。
+
 ---
 
 ## 5. API 设计
@@ -175,12 +188,15 @@ seclab-agent 节点
 | `GET` | `/api/v1/upgrades/releases/list` | 查询可用升级版本 |
 | `POST` | `/api/v1/upgrades/releases/sync` | 从 GitHub 同步 Release 元数据 |
 | `POST` | `/api/v1/upgrades/releases/upload` | 上传本地完整版本包并写入版本记录 |
+| `POST` | `/api/v1/upgrades/release/{version}/compatibility/check` | 检查目标版本与已安装套件的平台运行契约兼容性 |
 | `POST` | `/api/v1/upgrades/plan/create` | 创建升级计划 |
 | `POST` | `/api/v1/upgrades/plan/{plan_id}/start` | 启动升级计划 |
 | `GET` | `/api/v1/upgrades/plan/{plan_id}/detail` | 查询升级计划详情 |
 | `POST` | `/api/v1/upgrades/plan/{plan_id}/cancel` | 取消未执行目标 |
 
 `POST /api/v1/upgrades/plan/create` 当前接受 `component=cluster`，省略 `component` 时按 `cluster` 处理；controller 与 agent 的 target 由主控在 cluster 计划内自动展开。
+
+兼容性检查响应包含 `releaseVersion`、`supportedSuiteContractVersions`、总体 `compatible` 状态、数量汇总和实例明细。实例明细包含套件、节点、`platformContractVersion`、状态及原因。
 
 `POST /api/v1/upgrades/releases/upload` 使用 `multipart/form-data`，字段如下：
 
@@ -258,7 +274,17 @@ GET /api/v1/runtime/upgrades/artifacts/{version}/{component}/{target_triple}/dow
 
 上传来源以完整版本包为最小接收单元，单次上传同时提供同版本 controller 与 agent 制品。主控保存的 `assets` 摘要必须包含两个组件制品的文件名、本地缓存路径对应的下载标识、文件大小、content type、SHA256 和签名状态。
 
-### 6.3 创建并启动升级计划
+### 6.3 套件兼容性检查
+
+1. 管理员在目标版本操作区发起套件兼容性检查。
+2. 主控读取目标 Release 的 `supported_suite_contract_versions`；GitHub 来源尚未解析时，下载并验签对应完整版本包中的 `release.json`。
+3. 主控按请求节点范围查询所有未卸载套件实例的 `platform_contract_version`。
+4. 每个实例按集合包含关系标记为 `compatible` 或 `incompatible`。
+5. 前端展示总体结果、支持的契约版本集合以及不兼容的套件和节点。
+
+兼容性检查是只读预检，不改变套件或升级计划状态。
+
+### 6.4 创建并启动升级计划
 
 1. 管理员选择目标版本并启动集群升级。
 2. 主控创建 `upgrade_plans`。
@@ -270,7 +296,7 @@ GET /api/v1/runtime/upgrades/artifacts/{version}/{component}/{target_triple}/dow
 6. 离线节点 target 初始为 `deferred`。
 7. 启动计划后，计划状态变为 `running`。
 
-### 6.4 主控升级
+### 6.5 主控升级
 
 1. 调度器扫描到 `controller` target。
 2. 主控缓存并校验 controller 制品 SHA256 和签名。
@@ -279,7 +305,7 @@ GET /api/v1/runtime/upgrades/artifacts/{version}/{component}/{target_triple}/dow
 5. 若处于生产布局且允许自动重启，执行 `systemctl restart seclab`。
 6. 重启后调度器再次扫描，若当前版本等于目标版本，则 target 标记为 `succeeded`。
 
-### 6.5 agent 升级
+### 6.6 agent 升级
 
 1. 调度器扫描到 `agent` target。
 2. 若节点无活跃会话，target 保持或转为 `deferred`。
@@ -292,7 +318,7 @@ GET /api/v1/runtime/upgrades/artifacts/{version}/{component}/{target_triple}/dow
 9. agent 重启并重新注册后，调度器轮询 `status`。
 10. 当 agent 当前版本等于 target 版本，target 标记为 `succeeded`。
 
-### 6.6 离线节点补偿
+### 6.7 离线节点补偿
 
 离线节点进入延迟执行状态。
 
@@ -308,6 +334,22 @@ GET /api/v1/runtime/upgrades/artifacts/{version}/{component}/{target_triple}/dow
 ## 7. 制品与校验规范
 
 GitHub Release 和上传来源对外都只提供完整版本包三件套：完整版本包、checksum 和 `.sig` 签名。完整版本包内部包含 controller 与 agent 组件制品、组件 checksum 和组件签名。
+
+完整版本包还必须包含已签名的 `release.json`，其中声明目标平台和套件契约支持集合：
+
+```json
+{
+  "version": "0.1.0-alpha.1",
+  "channel": "prerelease",
+  "targetTriple": "linux-x86_64",
+  "publishedAt": "2026-08-11T00:00:00Z",
+  "compatibility": {
+    "supportedSuiteContractVersions": [1]
+  }
+}
+```
+
+`supportedSuiteContractVersions` 必须是非空、无重复且只包含正整数的数组。同一 Release 的不同 `targetTriple` 包必须声明完全相同的集合。
 
 ### 7.1 `targetTriple` 规范
 
@@ -462,6 +504,7 @@ agent `apply` 前会备份当前二进制：
 - 上传完整版本包。
 - 查看版本列表、checksum 状态和签名校验状态。
 - 查看版本来源，区分 GitHub 与本地上传。
+- 检查目标版本与已安装套件的平台运行契约兼容性，并列出不兼容实例。
 - 选择目标版本。
 - 创建并启动集群升级计划。
 - 查看计划状态、目标状态与事件流水。
@@ -501,3 +544,4 @@ agent `apply` 前会备份当前二进制：
 11. 离线 agent 上线后自动补齐升级。
 12. checksum 或签名校验失败时，目标停留在可诊断的失败状态。
 13. agent apply 失败后可通过 rollback 恢复。
+14. 套件兼容性检查按目标 Release 支持集合正确汇总兼容与不兼容实例，并支持节点范围过滤。
