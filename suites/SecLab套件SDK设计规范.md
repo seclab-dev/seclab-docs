@@ -1,5 +1,14 @@
 # SecLab 套件 SDK 设计规范
 
+## SDK 边界
+
+SecLab 套件包含两类相互隔离的 SDK：
+
+- `@seclab-dev/suite-sdk` 是浏览器 iframe Bridge，只负责主题、语言、通知、导航和窗口交互。
+- `seclab-suite-runtime-sdk` 是套件后端 Runtime SDK，提供 Rust 与 Python 实现，负责读取 Agent 注入的实例描述、UDS/mTLS HTTPS、令牌认证和受控能力调用。
+
+浏览器 SDK 不得读取 `/run/seclab-agent/runtime.json`、实例令牌、客户端证书或私钥。后端 Runtime SDK 不参与 iframe 消息协议。
+
 ## 定位
 
 `@seclab-dev/suite-sdk` 是 SecLab 主控与套件 Web 前端之间的标准通信层。
@@ -366,6 +375,10 @@ const result = await bridge.request("suite:notification:show", payload);
 - 套件关键生命周期事件。
 
 当前只保留协议占位。
+
+上述 `suite:log:event` 和 `suite:error:report` 是浏览器诊断蓝图，不属于平台操作日志。关键业务操作必须由套件后端声明 `runtime.agent.capabilities: [operation-logs.write]`，并通过 Runtime SDK 调用 `/api/v1/agent/suite-runtime/operation-events`。
+
+操作事件必须使用 UUIDv7 幂等键、稳定 lower snake case 事件码、中英文名称、明确结果和影响级别。Master 为用户发起的变更请求生成受信操作上下文，Agent 将其绑定到套件实例并向套件后端注入不透明上下文 ID；Runtime SDK 只负责原样回传。Agent 根据该上下文恢复平台用户、客户端 IP 和 trace ID，并使用令牌解析出的 suite ID、instance ID 和节点来源覆盖套件输入。套件不得声明或覆盖平台用户名、客户端 IP、模块和来源。不存在用户请求上下文的自主后台事件才以套件实例作为操作者。异步操作只记录一次提交和一次终态，查询、进度、界面偏好和敏感正文不进入操作日志。
 
 ### 13. 心跳与健康状态
 
