@@ -21,7 +21,7 @@
 - 默认主机端口范围。
 - `required` 属性。
 
-当前除 DNS 外均为 `main` TCP 端点。DNS 必须同时声明 `dns-tcp` 53/TCP 与 `dns-udp` 53/UDP，默认主机端口均为 1053。
+DNS 必须同时声明 `dns-tcp` 53/TCP 与 `dns-udp` 53/UDP，默认主机端口均为 1053。SNMP 声明 `main` 161/UDP，其他当前协议声明各自标准容器端口的 `main` TCP 端点。
 
 前端可以把多个同业务端点简化为一个主机端口输入，但提交给套件 API 和 Agent 的端点集合必须完整。TCP 与 UDP 的同数值主机端口是两个不同绑定。
 

@@ -35,7 +35,7 @@ API 与 engine 通过 common crate 共享 `ProtocolId`、行为配置、端点�
 - `guidedRuleEditor`
 - `advancedJsonEditor`
 
-当前能力目录包含 14 种协议：
+当前能力目录包含 19 种协议：
 
 | 协议 | 容器端点 | 主要行为配置 |
 | --- | --- | --- |
@@ -53,6 +53,13 @@ API 与 engine 通过 common crate 共享 `ProtocolId`、行为配置、端点�
 | SMB | `main` · 445/TCP | 服务器名、域与共享列表。 |
 | LDAP | `main` · 389/TCP | Base DN、凭据与目录条目。 |
 | DNS | `dns-tcp` · 53/TCP；`dns-udp` · 53/UDP | A 记录、默认 IPv4 与 TTL。 |
+| MongoDB | `main` · 27017/TCP | 服务版本、主机名与最大 Wire 版本。 |
+| Memcached | `main` · 11211/TCP | 服务版本与统计项。 |
+| SNMP | `main` · 161/UDP | Community、系统信息与 OID。 |
+| MQTT | `main` · 1883/TCP | 匿名连接策略。 |
+| VNC | `main` · 5900/TCP | RFB 协议版本与安全类型。 |
+
+MongoDB、Memcached、SNMP、MQTT 和 VNC 面向服务发现与版本探测：MongoDB 响应握手、构建信息和服务状态命令；Memcached 响应版本与统计命令；SNMP 响应 v1/v2c GET、GETNEXT 和 GETBULK；MQTT 完成 CONNECT/CONNACK 与心跳；VNC 完成 RFB 版本和安全类型协商。它们不提供数据库查询、缓存存储、SNMPv3、消息路由或远程桌面 framebuffer。
 
 DNS 是当前真实多端点规则。部署 UI 只要求用户输入一个主机端口，默认值为 `1053`；套件 API 在内部生成 `dns-tcp` 和 `dns-udp` 两条相同主机端口的绑定。TCP 与 UDP 可以合法共用同一数值端口。
 
@@ -144,7 +151,7 @@ Agent 将 `configJson` 注入 workload 的 `SECLAB_WORKLOAD_CONFIG_JSON`。当�
 }
 ```
 
-engine 按 transport 分别绑定 TCP listener 或 UDP socket。同一容器端口可同时绑定 TCP 与 UDP。非 DNS 协议当前只允许 TCP；DNS TCP 使用两字节长度前缀，UDP 使用原始 DNS 报文。
+engine 按协议描述校验端点 ID、transport 和容器端口，再分别绑定 TCP listener 或 UDP socket。同一容器端口可同时绑定 TCP 与 UDP。DNS 使用 53/TCP 与 53/UDP 双端点，其中 TCP 报文带两字节长度前缀；SNMP 使用单个 161/UDP 端点。
 
 运行时事件的 `schemaVersion` 为 `1`，包含 UUIDv7 `eventId`、`instanceId`、`endpointId`、事件类型、摘要、客户端地址、metadata、可选 payloadHex 和时间戳。套件 API 校验事件所属实例和端点后通过有界队列批量写入 SQLite。
 
@@ -162,6 +169,7 @@ PCAP 是工作负载级能力，一次抓包覆盖实例的全部公开端点。
 
 - 前端通过 capability descriptors 渲染协议字段和规则详情，不得为非 HTTP 协议回退显示 HTTP Server Header 或 HTML。
 - DNS 规则编辑支持 A 记录、默认 IPv4 和 TTL；详情以结构化表格展示记录。
+- MongoDB、Memcached、SNMP、MQTT 和 VNC 规则编辑提供影响服务识别的最小行为字段，Memcached 统计项和 SNMP OID 在详情中以结构化表格展示。
 - 部署弹窗保持单端口输入，DNS 内部展开为 TCP/UDP 同端口绑定。
 - 实例列表按主机端口聚合 transport，例如 `1053/TCP/UDP`，不展示内部端点 ID。
 - 审计从实例操作入口打开，只查询当前实例；实例下线后关联审计销毁。

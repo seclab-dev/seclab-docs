@@ -6,8 +6,9 @@
 
 ### Changed
 
+- 协议仿真设计扩展至 19 种协议，补充 MongoDB、Memcached、SNMP、MQTT、VNC 的扫描识别行为、SNMP 单 UDP 端点和规则 ID 分区。
 - 补充套件平台运行契约版本设计，覆盖清单声明、导入校验、实例固化和 SecLab 升级兼容性检查。
-- 重写协议仿真 v1 设计文档，覆盖 14 种协议、具名 TCP/UDP 多端点、DNS 双传输和 engine 运行时事件。
+- 重写协议仿真 v1 设计文档，覆盖具名 TCP/UDP 多端点、DNS 双传输和 engine 运行时事件。
 - 将规则库蓝图收敛为当前规则包规范，补齐 Protobuf v1、真实签名校验、`dist/` 交付目录和全链路兼容性契约。
 - 同步套件系统、Compose 开发与 Runtime SDK 文档，明确平台最低版本校验、服务/能力授权、workload 镜像白名单和整 workload 抓包。
 - 在 Agent OpenAPI 中登记 Suite Runtime workload 与 capture 接口及其实际请求、响应和安全边界。
