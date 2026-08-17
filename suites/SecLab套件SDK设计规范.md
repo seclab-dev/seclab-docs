@@ -56,7 +56,7 @@ Runtime SDK 的 Rust crate 与 Python package 暴露同构异步 API：
 | `start_capture` | `POST /api/v1/agent/suite-runtime/workloads/{workload_id}/captures` | `captures.manage` |
 | `finish_capture` | `POST /api/v1/agent/suite-runtime/workloads/{workload_id}/captures/{capture_id}/finish` | `captures.manage` |
 
-创建请求使用 `workloadKind`、`workloadName`、`image`、`ports`、`env`、`configJson` 和 `resources`。每个 `ports` 元素包含稳定的 `endpointId`、`hostPort`、`containerPort` 与 `protocol`；`protocol` 当前只允许 `tcp` 或 `udp`。端点身份不能从端口号推导，同一数字端口可以分别用于 TCP 和 UDP。
+创建请求使用 `workloadKind`、`workloadName`、`image`、`ports`、`env`、`configJson` 和 `resources`。`workloadName` 由套件提供，必须是唯一、可读的完整名称主体；Agent 清洗该值并添加统一的 `sl-` 容器名前缀。每个 `ports` 元素包含稳定的 `endpointId`、`hostPort`、`containerPort` 与 `protocol`；`protocol` 当前只允许 `tcp` 或 `udp`。端点身份不能从端口号推导，同一数字端口可以分别用于 TCP 和 UDP。
 
 SDK 只提交期望状态，Agent 负责校验镜像白名单、端口冲突、资源限制和实例归属。列表和删除只能看见或操作当前实例创建的 workload。
 
