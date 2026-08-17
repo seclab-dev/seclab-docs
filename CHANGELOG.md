@@ -6,6 +6,8 @@
 
 ### Changed
 
+- 明确 Agent 动态工作负载统一使用 `sl-` 前缀，并由套件通过 `workloadName` 提供唯一、可读的完整名称主体。
+- 补充交互式 PCAP 的端到端时序、Agent 报文分发、双层超时、状态恢复、文件命名与安全清理设计。
 - 协议仿真设计扩展至 19 种协议，补充 MongoDB、Memcached、SNMP、MQTT、VNC 的扫描识别行为、SNMP 单 UDP 端点和规则 ID 分区。
 - 补充套件平台运行契约版本设计，覆盖清单声明、导入校验、实例固化和 SecLab 升级兼容性检查。
 - 重写协议仿真 v1 设计文档，覆盖具名 TCP/UDP 多端点、DNS 双传输和 engine 运行时事件。
